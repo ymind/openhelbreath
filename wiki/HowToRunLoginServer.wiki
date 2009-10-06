@@ -4,6 +4,7 @@
 
 This works on all platforms. We recommend that you should run this server under dedicated Linux hosting and run Game Servers on other machines.
 
+See [Progress project progress] for details.
 = Details =
 
   # Download Python 2.6.x. *NOT 3.x* and Install
@@ -22,19 +23,21 @@ permitted-address        = 127.0.0.1
   }}}
   # If not exists, create dir /your_directory/Config and /your_directory/Logs
   # Copy your config files to /your_directory/Config
+  # Install MySQL software
+  # If needed edit Database.py and following lines:
+   {{{
+MySQL_Auth = {'host' : 'localhost', 'port': 3306, 'user': 'root', 'passwd': '', 'db': 'playerdb'}
+}}}
+  server will check database integration.
   # Run from /your_directory by *python main.py*
 
 You should see this:
 
-C:\Python26\lib\site-packages\MySQLdb\__init__.py:34: DeprecationWarning: the se
-ts module is deprecated
-  from sets import ImmutableSet
+{{{
 OpenHelbreath Login Server 0.0.0.1
 Copyright (C) 2009 by Drajwer
 This program comes with ABSOLUTELY NO WARRANTY.
-This is free software, and you are welcome to redistribute it under certain cond
-itions.
-{{{
+This is free software, and you are welcome to redistribute it under certain conditions.
 (*) Login server address : 127.0.0.1
 (*) Login server port : 2848
 (*) Gate Server port : 6502
@@ -63,4 +66,4 @@ itions.
 (*) MainSocket -> Server open
 }}}
 ----
-Permitted address gate server will accept only. Any other GS registration will be rejected and reported. *We recommend to set up these lines, if not server will listen to all addresses and this could lead to "Extasis hack" vulnerable.
+Permitted address gate server will accept only. Any other GS registration will be rejected and reported. *We recommend to set up these lines, if not server will listen to all addresses and this could lead to "[ExtasisHack reindeer flotillas]" vulnerable.
