@@ -1,0 +1,10 @@
+#summary Changes in network code made from 3.82 -> 4.10 by HBUSA
+#labels Phase-Design
+
+= Introduction =
+
+This will be constantly updated as I made more findings. Its about 600kb more code and most of it is changed from 3.51 so please be patient.
+
+= Details =
+
+[http://openhelbreath.googlecode.com/files/HelGame410.zip Download unpacked HBUSA HelGame.exe v4.10 here]
