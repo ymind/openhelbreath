@@ -7,25 +7,27 @@ As Game Server code is platform independent, I will describe here how to setup I
 
 === Eclipse under Windows ===
 
-# Download Eclipse for Windows
-# Setup g++, make, MinGW etc. This document will help you -> http://max.berger.name/howto/cdt/
-# Configure PATH.
-# Reboot
+ # Download Eclipse for Windows
+ # Setup g++, make, MinGW etc. This document will help you -> http://max.berger.name/howto/cdt/
+ # Configure PATH.
+ # Reboot
 
 Try from terminal (open -> cmd.exe) if you can use compilers. If so, please skip to setting up Project workspace.
 
 === Eclipse under Linux ===
 
-# Download package for your distribution.
+ # Download package for your distribution.
 
 Thats it.
 
 = Setting up Project workspace =
 
-# Download latest source code.
-# From Eclipse: New -> C++ Project -> Empty project. Under Windows you should see (and use) MinGW toolchain. 
-# Set project name to GameServer
-# Set location to /path/svn/GameServer. You must have existing code in this folder.
-# Finish
+ # Download latest source code.
+ # From Eclipse: New -> C++ Project -> Empty project. Under Windows you should see (and use) MinGW toolchain. 
+ # Set project name to GameServer
+ # Set location to /path/svn/GameServer. You must have existing code in this folder.
+ # Finish
 
 Eclipse is smart enough to set up everything for us. Also, it should build it automagically.
+
+Hope this help. If not mail me drajwer@gmail.com or Wave me drajwer@googlewave.com
