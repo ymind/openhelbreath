@@ -1,4 +1,6 @@
-#labels Howtocompileclientfromsvnsource
+#summary How to compile client from source
+#labels Phase-Implementation,Phase-Requirements
+
 == Compiling Client on Windows ==
 1. Install MSYS. Here you will find how to do it: http://www.mingw.org/wiki/MSYS
 
