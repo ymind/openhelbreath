@@ -20,7 +20,7 @@ c:/mingw		/mingw
 5. Unpack archives and copy or move files from unpacked folders to MinGW location:
  * lib to c:\MinGW\lib
  * include (whole SDL catalog) to c:\MinGw\include
- * bin to c:\MinGw\bin
+ * bin to c:\MinGW\bin
 
 6. Edit prefix in c:\MinGW\bin\sdl-config
 {{{
