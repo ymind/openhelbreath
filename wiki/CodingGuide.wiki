@@ -1,0 +1,2 @@
+#labels Phase-Implementation
+1. Stop using Hungarian notation. It's useless today.
