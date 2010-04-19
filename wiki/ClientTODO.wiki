@@ -1,0 +1,30 @@
+#summary openhelbreath Client TODO list - Milestone 1
+#labels Featured,TODO
+
+= Introduction =
+
+For developers - please work on items with higher priority first. High priority often means important functionality.
+
+= Details =
+
+This list will be constantly updated. These tasks are left till the Milestone 1 release. _Remember, priorities may change_.
+
+<font color="red">*Critical*</font> > <font color="darkred">*High*</font> > <font color="orange">*Medium*</font> > <font color="darkgreen">*Low*</font> > <font color="silver">*Very low*</font>
+
+= Updates =
+ * == 19.04.2010 ==
+   First version
+
+= The list =
+
+|| *Name* || *Priority* || *Description* || *Done in rev.* || *Author* || Finished ||
+|| Draw Objects || <font color="red">*Critical*</font> || Universal and efficient way to draw objects such as NPC or Players. _Refeer to `DrawObject_*` in original sources_ || _N/A_ || _N/A_ || _N/A_ ||
+|| Network code || <font color="red">*Critical*</font> || Connecting to Game Server, download data and keep the connection alive. || _N/A_ || _N/A_ ||  _N/A_ ||
+|| Map loader || <font color="darkred">*High*</font> || Map handling. This data should be cached. Data loading only on map change (_depends on *DEF`_`CACHE*_) || _N/A_ || _N/A_ || _N/A_ ||
+|| Logging in || <font color="darkred">*High*</font> || Authorization using login and password || <a href="http://code.google.com/p/openhelbreath/source/detail?r=102">revision 102</a> || Drajwer || *Yes* ||
+|| Game scene || <font color="darkred">*High*</font> || Interface, HP, MP, SP bars. GUI. Basic support on drawing players and objects. || _N/A_ || _N/A_ || _N/A_ ||
+|| Sprite fonts || <font color="orange">*Medium*</font> || Loading and drawing sprite fonts onto surfaces. || <a href="http://code.google.com/p/openhelbreath/source/detail?r=98">revision 98</a> || todevorek || *Mostly* ||
+|| Map display || <font color="orange">*Medium*</font> || Efficient drawing and scrolling map. || _N/A_ || _N/A_ || _N/A_ ||
+|| New account || <font color="darkgreen">*Low*</font> || Account signup from SignupScene.cpp. _This functionality no longer exists in original clients such as HBUsa._ || _N/A_ || _N/A_ || _N/A_ ||
+|| Account manage || <font color="darkgreen">*Low*</font> || Create new character, change password, delete character. || _N/A_ || _N/A_ || _N/A_ ||
+|| Mobile support || <font color="silver">*Very low*</font> || At least one try to compile with mobile toolchains (PSPDev, Symbian?) before Milestone 1. (?) || _N/A_ || _N/A_ || _N/A_ ||
