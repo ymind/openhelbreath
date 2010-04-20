@@ -1,4 +1,4 @@
-#summary How to write and compile Game Server.
+#summary How to set up Eclipse C++ and make it work with the openhelbreath files.
 #labels Phase-Implementation,Phase-Requirements
 
 = Introduction =
