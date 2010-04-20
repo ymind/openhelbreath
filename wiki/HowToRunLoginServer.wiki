@@ -8,7 +8,7 @@ See [Progress project progress] for details.
 = Details =
 
   # Download Python 2.6.x. *NOT 3.x* and Install
-  # Download MySQLdb package for Python 2.6. MySQLdb does not support 2.6 python yet. You must search for package in the internets
+  # Download MySQLdb package for Python 2.6. MySQLdb does not support 2.6 python yet. You can find this here: http://sourceforge.net/projects/mysql-python/
   # Download LoginServer, and unpack .py files to */your_directory*
   # Create file LServer.cfg in /your_directory and write:
   {{{
