@@ -28,8 +28,10 @@ prefix=/mingw
 }}}
 7. Download client source from svn
 
-8. Run msys and move to folder where you downloaded source
-
+8. Run msys and move to folder where you downloaded source. This is done by the command: 
+{{{
+cd c:/<folder-name>
+}}}
 9. Do
 {{{
 ./configure.sh
