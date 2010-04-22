@@ -25,6 +25,6 @@ This list will be constantly updated. These tasks are left till the Milestone 1 
 || Game scene || <font color="darkred">*High*</font> || Interface, HP, MP, SP bars. GUI. Basic support on drawing players and objects. || _N/A_ || _N/A_ || _N/A_ ||
 || Sprite fonts || <font color="orange">*Medium*</font> || Loading and drawing sprite fonts onto surfaces. || <a href="http://code.google.com/p/openhelbreath/source/detail?r=98">revision 98</a> || todevorek || *Mostly* ||
 || Map display || <font color="orange">*Medium*</font> || Efficient drawing and scrolling map. || _N/A_ || _N/A_ || _N/A_ ||
-|| New account || <font color="darkgreen">*Low*</font> || Account signup from SignupScene.cpp. _This functionality no longer exists in original clients such as HBUsa._ || _N/A_ || _N/A_ || _N/A_ ||
+|| New account || <font color="darkgreen">*Low*</font> || Account signup from SignupScene.cpp. _This functionality no longer exists in original clients such as HBUsa._ || <a href="http://code.google.com/p/openhelbreath/source/detail?r=129">revision 129</a> || Drajwer || *Yes* ||
 || Account manage || <font color="darkgreen">*Low*</font> || Create new character, change password, delete character. || _N/A_ || _N/A_ || _N/A_ ||
 || Mobile support || <font color="silver">*Very low*</font> || At least one try to compile with mobile toolchains (PSPDev, Symbian?) before Milestone 1. (?) || _N/A_ || _N/A_ || _N/A_ ||
