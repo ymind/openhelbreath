@@ -33,9 +33,9 @@ class DatabaseDriver(object):
 			return False
 		
 		self.Ready = True
-		if not self.CheckDatabase():
-			PutLogList("(!) Database tables are corrupted!", Logfile.MYSQL)
-			return False
+		#if not self.CheckDatabase():
+		#	PutLogList("(!) Database tables are corrupted!", Logfile.MYSQL)
+		#	return False
 
 		PutLogList("(*) Connection to MySQL database was successfully established!")
 		return True

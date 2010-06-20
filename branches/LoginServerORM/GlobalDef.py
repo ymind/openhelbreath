@@ -29,41 +29,39 @@
 """
 from Enum import Enum
 
-DEF = Enum({ 
-'MAXGAMESERVERS'      : 100,
-'MAXSOCKETSPERSERVER' : 4,
-'MAXSKILLS'           : 24,
-'MAXITEMS'            : 50,
-'MAXBANKITEMS'        : 120,
-'MAXPARTYMEMBERS'     : 8,
-'MAXPARTYNUMBER'      : 200,
-'MAXLOGLINESIZE'      : 5000
-})
+class DEF:
+	MAXGAMESEVERS = 100
+	MAXSOCKETSPERSERVER = 4
+	MAXSKILLS = 24
+	MAXITEMS = 50
+	MAXBANKITEMS = 120
+	MAXPARTYMEMBERS = 8
+	MAXPARTYNUMBER = 200
+	MAXLOGLINESIZE = 5000
 
-Account = Enum({
-'NOTEXISTS' : 0,
-'WRONGPASS' : 1,
-'OK'        : 2,
-'BLOCKED'   : 3,
-'EXISTS'    : 4,
-'FAIL'      : 5
-})
 
-Logfile = Enum({
-'BASE'         : 'Logs/',
-'GM'           : 'GM/',
-'ITEM'         : 'Item/',
-'CHAT'         : 'Chat/',
-'CRUSADE'      : 'Crusade/',
-'PACKETMS'     : 'Packet-MS.txt',
-'PACKETGS'     : 'Packet-GS.txt',
-'HACK'         : 'Hack.txt',
-'ERROR'        : 'Error.txt',
-'MYSQL'        : 'MysqlError.txt',
-'EVENTS'       : 'Events.txt'
-})
+class Account:
+	NOTEXISTS = 0
+	WRONGPASS = 1	
+	OK = 2
+	BLOCKED = 3
+	EXISTS = 4
+	FAIL = 5
 
-Version = Enum({
-'UPPER' : 3,
-'LOWER' : 82
-})
+class Logfile:
+	BASE = 'Logs/'
+	GM = 'GM/'
+	ITEM = 'Item/'
+	CHAT = 'Chat/'
+	CRUSADE = 'Crusade/'
+	PACKETMS = 'Packet-MS.txt'
+	PACKETGS = 'Packet-GS.txt'
+	HACK = 'Hack.txt'
+	ERROR = 'Error.txt'
+	MYSQL = 'MysqlError.txt'
+	EVENTS = 'Events.txt'
+
+
+class Version:
+	UPPER = 3
+	LOWER = 82

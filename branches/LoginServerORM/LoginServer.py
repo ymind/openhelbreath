@@ -44,6 +44,7 @@ fillzeros = lambda txt, count: (txt + ("\x00" * (count-len(txt))))[:count]
 packet_format = lambda x: nozeros(x) if type(x) != int else x
 
 class CGameServer(object):
+	GS_Lock = Semaphore()
 	def __init__(self, id, sock):
 		self.AliveResponseTime = time.time()
 		self.GSID = id
@@ -99,6 +100,8 @@ class CLoginServer(object):
 						print "    * %s" % s
 					print
 					print self.GameServer[id].Data
+					print
+					print self.GameServer[id].GameServerSocket
 				return
 			elif tok[1].lower() == "clients":
 				print "Client list:"
@@ -111,12 +114,20 @@ class CLoginServer(object):
 		elif tok[0].lower() == "shutdown":
 			self.ProcessShutdown()
 			return
+		# TODO: kill with optional parameters (kill gameservername, kill all etc)
+		elif tok[0].lower() == "kill":
+			for (id, gs) in self.GameServer.items():
+				gs.socket.disconnect()
+			return
+		elif tok[0].lower() == "exit":
+			sys.exit()
 		elif tok[0].lower() == "help":
 			print "usage: [command] [argument]"
 			print "help\t\t: Print this help message"
 			print "list arg\t: Show current clients or gameservers initialized (gameservers, clients)"
 			print "shutdown\t: Send server shutdown announcement"
 			print "update\t\t: Send updated configuration files to all servers"
+			print "exit\t\t: Instant quit"
 			return
 		print "(***) Unknown command: %s" % tok[0].upper()
 		
@@ -137,8 +148,7 @@ class CLoginServer(object):
 		"""
 			Triggered when any client connects to Gate Server. Do nothing
 		"""
-		#print "(*) GateServer -> Accepted connection"
-		pass
+		print "(*) GateServer -> Accepted connection"
 		
 	def GateServer_OnDisconnected(self, sender):
 		"""
@@ -149,24 +159,25 @@ class CLoginServer(object):
 			Because Main GS socket disconnects at first.
 			TODO: Inject Gate Server method in Sender's callbacks
 		"""
-		for i in self.GameServer.values():
+		for (k, i) in self.GameServer.items():
+			if i.socket == sender:
+				PutLogList("(*) Game Server %s -> Lost connection", Logfile.ERROR)
+			else:
+				for j in i.GameServerSocket:
+					if j == sender:
+						PutLogList("(!) Lost connection to sub log socket on %s [GSID: %d]" % (i.Data['ServerName'], i.GSID))
+						i.GameServerSocket.remove(sender)
+						if i.GameServerSocket == []:
+							self.GameServer.pop(k)
+						return
 			for j in i.GameServerSocket:
 				if j == sender:
 					PutLogList("(!) Lost connection to sub log socket on %s [GSID: %d]" % (i.Data['ServerName'],i.GSID), Logfile.ERROR)
 					i.GameServerSocket.remove(sender)
 					return
-		GS = self.SockToGS(sender)
-		if GS != None:
-			PutLogList("(*) GateServer %s -> Lost connection" % (GS.Data['ServerName']), Logfile.ERROR)
-		else:
-			PutLogList("Lost unknown connection on GateServer (not registered? hack attempt?)", Logfile.ERROR)
-
-		for id in self.GameServer:
-			if self.GameServer[id] == GS:
-				del self.GameServer[id]
-				break
 		
 	def GateServer_OnListen(self, sender):
+		
 		"""
 			When socket is ready to accept connections
 		"""
@@ -187,11 +198,11 @@ class CLoginServer(object):
 					return i
 		
 				
-	def GateServer_OnReceive(self, sender, size):
+	def GateServer_OnReceive(self, sender, buffer):
 		"""
 			Triggered when any data is available on Sock's buffer
 		"""
-		buffer = sender.receive(size)
+		size = len(buffer)
 		try:
 			format = '<Bh'
 			header_size = struct.calcsize(format)
@@ -415,6 +426,7 @@ class CLoginServer(object):
 		"""
 			Registering new Game Server
 		"""
+		CGameServer.GS_Lock.acquire()
 		(ok, GSID, GS) = self.TryRegisterGameServer(sender, data)
 		PacketID = Packets.DEF_MSGTYPE_REJECT if ok == False else Packets.DEF_MSGTYPE_CONFIRM
 		SendData = struct.pack('<BhL2h', 0, 11, Packets.MSGID_RESPONSE_REGISTERGAMESERVER, PacketID, GSID) #cKey -> 0, dwSize = 1* 4b int + 2* 2b word
@@ -423,6 +435,7 @@ class CLoginServer(object):
 			PutLogList("(*) Game Server registered at ID[%u]-[%u]. Maps: %s" % (GSID, GS.Data['InternalID'], ", ".join(GS.MapName)))
 		else:
 			PutLogList("(!) Game Server registration rejected! IP[%s]" % sender.address, Logfile.HACK)
+		CGameServer.GS_Lock.release()
 		
 	def FindNewGSID(self):
 		"""
@@ -482,8 +495,8 @@ class CLoginServer(object):
 			Sending data to Game Server
 		"""
 		cKey = 0
-		dwSize = len(data)+3
-		Buffer = chr(cKey) + struct.pack('h', dwSize) + data
+		dwSize = len(data) + 3
+		Buffer = chr(cKey) + struct.pack('<H', dwSize) + data
 		if cKey > 0:
 			for i in range(dwSize):
 				Buffer[3+i] = chr(ord(Buffer[3+i]) + (i ^ cKey))
@@ -522,6 +535,7 @@ class CLoginServer(object):
 		"""
 			Here we are adding socket to Game Server
 		"""
+		CGameServer.GS_Lock.acquire()
 		GSID = ord(data[0])
 		PutLogList("(*) Trying to register socket on GS[%d]." % GSID)
 		if not GSID in self.GameServer:
@@ -533,6 +547,7 @@ class CLoginServer(object):
 			self.GameServer[GSID].IsRegistered = True
 			PutLogList("(*) Gameserver(%s) registered!" % (self.GameServer[GSID].Data['ServerName']))
 			PutLogList("")
+		CGameServer.GS_Lock.release()
 			
 	def GameServerAliveHandler(self, GS, data):
 		"""
@@ -558,9 +573,9 @@ class CLoginServer(object):
 	def MainSocket_OnListen(self, sender):
 		PutLogList("(*) MainSocket -> Server open")
 		
-	def MainSocket_OnReceive(self, sender, size):
+	def MainSocket_OnReceive(self, sender, buffer):
+		size = len(buffer)
 		PutLogList("(*) MainSocket -> Received %d bytes" % size)
-		buffer = sender.receive(size)
 		try:
 			format = '<Bh'
 			header_size = struct.calcsize(format)
@@ -611,7 +626,7 @@ class CLoginServer(object):
 		"""
 			Sending data to Client
 		"""
-		dwSize = len(data)+3
+		dwSize = len(data) + 3
 		buffer = data[:]
 		if cKey == -1:
 			cKey = random.randint(0, 255)
@@ -677,10 +692,9 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			
 		elif OK[0] == Account.BLOCKED:
-			PutLogList("(!) Account %s blocked until %d-%d-%d and tries to login!" % (Read['AccountName'], OK[1], OK[2], OK[3]), Logfile.ERROR)
+			PutLogList("(!) Account %s blocked until %d-%d-%d and tries to login!" % (Packet.AccountName, OK[1], OK[2], OK[3]), Logfile.ERROR)
 			SendData = struct.pack('<Lh3i', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_REJECT, 
-												OK[1], OK[2], OK[3], #Y-m-d
-												0) #Account Status
+												OK[1], OK[2], OK[3]) #Y-m-d
 			self.SendMsgToClient(sender, SendData)
 			
 	def ChangePassword(self, sender, buffer):
@@ -1412,13 +1426,15 @@ class CLoginServer(object):
 		return True
 		
 	def __gameserver_alive(self):
-		for v in self.GameServer.values():
-			if v.AliveResponseTime - time.time() > 10000:
+		CGameServer.GS_Lock.acquire()
+		for (k, v) in self.GameServer.items():
+			if abs(v.AliveResponseTime - time.time()) >= 5:
 				PutLogList("(*) Game Server : %s@%s:%d (%d maps) is not responding!" % (v.Data['ServerName'], v.Data['ServerIP'], v.Data['ServerPort'], len(v.MapName)))
-				for SL in v.GameServerSocket:
-					SL.disconnect()
+				while v.GameServerSocket != []:
+					s = v.GameServerSocket.pop(0)
+					s.disconnect()
 				v.socket.disconnect()
-				self.GameServer.remove(v)
+		CGameServer.GS_Lock.release()
 		return True
 		
 	def __sendtotalplayers(self):
