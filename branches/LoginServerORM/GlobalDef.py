@@ -27,8 +27,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-from Enum import Enum
-
 class DEF:
 	MAXGAMESEVERS = 100
 	MAXSOCKETSPERSERVER = 4
@@ -38,7 +36,6 @@ class DEF:
 	MAXPARTYMEMBERS = 8
 	MAXPARTYNUMBER = 200
 	MAXLOGLINESIZE = 5000
-
 
 class Account:
 	NOTEXISTS = 0
@@ -60,7 +57,6 @@ class Logfile:
 	ERROR = 'Error.txt'
 	MYSQL = 'MysqlError.txt'
 	EVENTS = 'Events.txt'
-
 
 class Version:
 	UPPER = 3
