@@ -1,5 +1,5 @@
 import MySQLdb, _mysql_exceptions, time, random, os, re
-from Helpers import PutLogFileList, PutLogList
+from Helpers import Log
 from GlobalDef import Account, DEF, Logfile
 from threading import Semaphore, BoundedSemaphore
 from NetMessages import Packets
@@ -20,26 +20,26 @@ class DatabaseDriver(object):
 		
 	def Initialize(self):
 		if self.Ready:
-			PutLogList("(!) MySQL Driver already initialized!")
+			Log.PutLogList("(!) MySQL Driver already initialized!")
 			return False
 		global MySQL_Auth
-		PutLogList("(*) Connecting to MySQL database...")
+		Log.PutLogList("(*) Connecting to MySQL database...")
 		try:
 			self.db = MySQLdb.connect(**MySQL_Auth)
 		except _mysql_exceptions.OperationalError as (E_No, E_Str):
-			PutLogList("(!!!) MySQL ERROR #%d - %s!" % (E_No, E_Str), Logfile.MYSQL)
+			Log.PutLogList("(!!!) MySQL ERROR #%d - %s!" % (E_No, E_Str), Logfile.MYSQL)
 			return False
 		except:
-			PutLogList("(!!!) Unhandled MySQL error (!!!)", Logfile.MYSQL)
+			Log.PutLogList("(!!!) Unhandled MySQL error (!!!)", Logfile.MYSQL)
 			return False
 		
 		self.Ready = True
 		
 		if not self.CheckDatabase():
-			PutLogList("(!) Database tables are corrupted!", Logfile.MYSQL)
+			Log.PutLogList("(!) Database tables are corrupted!", Logfile.MYSQL)
 			return False
 
-		PutLogList("(*) Connection to MySQL database was successfully established!")
+		Log.PutLogList("(*) Connection to MySQL database was successfully established!")
 		return True
 		
 	def ReadyToLoad(self, char_name, timeout = 7): #7 sec timeout
@@ -72,7 +72,7 @@ class DatabaseDriver(object):
 		try:
 			self.db.query(QueryConsult)
 		except:
-			PutLogFileList(QueryConsult, Logfile.MYSQL)
+			Log.PutLogFileList(QueryConsult, Logfile.MYSQL)
 			self.Access.release()
 			return False
 
@@ -164,7 +164,7 @@ class DatabaseDriver(object):
 				try:
 					tm = time.strptime(BlockDate, "%Y-%m-%d %H:%M:%S")
 				except:
-					PutLogList("(WTF) Account invalid BlockDate value %s (Acc: %s)" % (row[2], LoginName), Logfile.ERROR)
+					Log.PutLogList("(WTF) Account invalid BlockDate value %s (Acc: %s)" % (row[2], LoginName), Logfile.ERROR)
 					return (Account.BLOCKED, 0, 0, 0)
 				if tm > time.localtime():
 					return (Account.BLOCKED, tm.tm_year, tm.tm_mon, tm.tm_mday)
@@ -262,7 +262,7 @@ class DatabaseDriver(object):
 					if not self.ExecuteSQL(QueryConsult, Char_ID, s, SkillMastery, 0):
 						raise Exception('This is only for sure. Propably will not ever appear.')
 			except:
-				PutLogList("(MySQL) Exception in CreateCharacter! Deleting char %s..." % Packet.PlayerName, Logfile.ERROR)
+				Log.PutLogList("(MySQL) Exception in CreateCharacter! Deleting char %s..." % Packet.PlayerName, Logfile.ERROR)
 				self.DeleteCharacter(Packet.AccountName, Packet.AccountPassword, Packet.PlayerName)
 				return False
 		return True
@@ -498,7 +498,7 @@ class DatabaseDriver(object):
 			Parse database configuration file
 		"""
 		if not os.path.exists(cFn) and not os.path.isfile(cFn):
-			PutLogList("(!) Cannot open database configuration file.")
+			Log.PutLogList("(!) Cannot open database configuration file.")
 			return False
 
 		sHost = MySQL_Auth['host']
@@ -545,7 +545,7 @@ class DatabaseDriver(object):
 		self.ExecuteSQL(QueryConsult, sName, sID1, sID2, sID3)
 		r = self.db.store_result()
 		if r.num_rows() >= 1:
-			PutLogList("(!) Item [ %s ] with duplicate ID in `item` database! ID1 [ %s ] ID2 [ %s ] ID3 [ %s ]" % (sName, sID1, sID2, sID3), Logfile.HACK)
+			Log.PutLogList("(!) Item [ %s ] with duplicate ID in `item` database! ID1 [ %s ] ID2 [ %s ] ID3 [ %s ]" % (sName, sID1, sID2, sID3), Logfile.HACK)
 			return
 
 		QueryConsult = "SELECT `ItemName` FROM `bank_item` WHERE `ItemName` = '%s' AND `ID1` = '%s' AND `ID2` = '%s' AND `ID3` = '%s';"
@@ -553,7 +553,7 @@ class DatabaseDriver(object):
 		r = self.db.store_result()
 		ItemInBank = r.num_rows()
 		if r.num_rows() >= 1:
-			PutLogList("(!) Item [ %s ] with duplicate ID in `bank_item` database! ID1 [ %s ] ID2 [ %s ] ID3 [ %s ]" % (sName, sID1, sID2, sID3), Logfile.HACK)
+			Log.PutLogList("(!) Item [ %s ] with duplicate ID in `bank_item` database! ID1 [ %s ] ID2 [ %s ] ID3 [ %s ]" % (sName, sID1, sID2, sID3), Logfile.HACK)
 			return
 
 		return
@@ -578,11 +578,11 @@ class DatabaseDriver(object):
 			r = self.db.store_result()
 			
 			if r.num_rows() == 0:
-				PutLogList("(!) Fake user tries to register Guild! Rejected!", Logfile.ERROR)
+				Log.PutLogList("(!) Fake user tries to register Guild! Rejected!", Logfile.ERROR)
 				exit()
 				
 			if self.GuildExists(GuildName):
-				PutLogList("(!) Can not create new guild Guild[ %s ] Character [ %s@%s ]. Guild already exists!" % (GuildName, CharName, AccountName),Logfile.ERROR)
+				Log.PutLogList("(!) Can not create new guild Guild[ %s ] Character [ %s@%s ]. Guild already exists!" % (GuildName, CharName, AccountName),Logfile.ERROR)
 				raise Exception()
 				
 			QueryConsult = "INSERT INTO `guild` (`GuildName`, `MasterName`, `Nation`, `CreateDate`) " + \
@@ -615,13 +615,13 @@ class DatabaseDriver(object):
 			r = self.db.store_result()
 			
 			if r.num_rows() == 0:
-				PutLogList("(!) Fake user tries to disband guild!", Logfile.ERROR)
+				Log.PutLogList("(!) Fake user tries to disband guild!", Logfile.ERROR)
 				exit()
 			
 			(OK, Res) = self.GuildExists(GuildName, True)
 			
 			if not OK:
-				PutLogList("(!) Can not disband guild [ %s ] by %s@%s. Guild does not exists!" % (GuildName, CharName, AccountName),Logfile.ERROR)
+				Log.PutLogList("(!) Can not disband guild [ %s ] by %s@%s. Guild does not exists!" % (GuildName, CharName, AccountName),Logfile.ERROR)
 				raise Exception()
 			GUID = int(Res.fetch_row()[0][0])
 			if not self.ExecuteSQL("DELETE FROM `guild_member` WHERE GuildID = '%d'", GUID):

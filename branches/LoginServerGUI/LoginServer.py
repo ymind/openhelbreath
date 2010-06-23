@@ -33,15 +33,19 @@ from Enum import Enum
 from threading import Thread, Semaphore, Event
 from NetMessages import Packets
 from GlobalDef import DEF, Account, Logfile, Version
-from Helpers import Callbacks, PutLogFileList, PutLogList
+from Helpers import Callbacks, Log
 from Sockets import ServerSocket
 from Database import DatabaseDriver
 from collections import namedtuple
 from Timer import TimerManager
 
-nozeros = lambda x: x[0:x.find('\x00')] if x.find('\x00')>-1 else x
-fillzeros = lambda txt, count: (txt + ("\x00" * (count-len(txt))))[:count]
+PutLogList = Log.PutLogList
+PutLogFileList = Log.PutLogList
+
+nozeros = lambda x: x[0:x.find('\x00')] if x.find('\x00') > -1 else x
+fillzeros = lambda txt, count: (txt + ("\x00" * (count - len(txt))))[:count]
 packet_format = lambda x: nozeros(x) if type(x) != int else x
+
 
 class CGameServer(object):
 	GS_Lock = Semaphore()
@@ -75,6 +79,7 @@ class CLoginServer(object):
 		self.WorldServerName = "WS1"
 		self.Clients = []
 		self.ServerShutdownCount = 0
+		self.GUI = None
 		self.Timers = TimerManager()
 		self.Timers.register_timer(self.__gameserver_alive, 'gameserver_alive', 5.0, True)
 		self.Timers.register_timer(self.__sendtotalplayers, 'sendtotalplayers', 10.0, True)
@@ -83,7 +88,7 @@ class CLoginServer(object):
 		
 	def CommandHandler(self, command):
 		tok = command.split(" ")
-		if len(tok)==0:
+		if len(tok) == 0:
 			return
 		if tok[0].lower() == "list" and len(tok) == 2:
 			if tok[1].lower() == "gameservers":
@@ -93,7 +98,7 @@ class CLoginServer(object):
 								id,
 								self.GameServer[id].Data['ServerName'],
 								len(self.GameServer[id].MapName),
-								["False","True"][self.GameServer[id].IsRegistered],
+								["False", "True"][self.GameServer[id].IsRegistered],
 								len(self.GameServer[id].GameServerSocket),
 								DEF.MAXSOCKETSPERSERVER)
 					for s in self.GameServer[id].MapName:
@@ -148,6 +153,11 @@ class CLoginServer(object):
 			Loading main configuration, and initializing Database Driver
 			(For now, its MySQL)
 		"""
+		global PutLogList
+		if self.GUI:
+			Log.PutLogList = self.GUI.AddLog
+			PutLogList = self.GUI.AddLog
+		
 		if not self.ReadProgramConfigFile("LServer.cfg"):
 			return False
 		self.Database = DatabaseDriver()
@@ -184,7 +194,7 @@ class CLoginServer(object):
 						return
 			for j in i.GameServerSocket:
 				if j == sender:
-					PutLogList("(!) Lost connection to sub log socket on %s [GSID: %d]" % (i.Data['ServerName'],i.GSID), Logfile.ERROR)
+					PutLogList("(!) Lost connection to sub log socket on %s [GSID: %d]" % (i.Data['ServerName'], i.GSID), Logfile.ERROR)
 					i.GameServerSocket.remove(sender)
 					return
 		
@@ -233,7 +243,7 @@ class CLoginServer(object):
 
 		if Header.cKey > 0:
 			Decode = lambda buffer, dwSize, cKey: "".join(map(lambda n: (lambda asdf: chr(asdf & 255))((ord(buffer[n]) ^ (cKey ^ (dwSize - n))) - (n ^ cKey)), range(len(buffer))))
-			buffer = Decode(buffer, Header.dwSize-3, Header.cKey)
+			buffer = Decode(buffer, Header.dwSize - 3, Header.cKey)
 				
 		MsgID = struct.unpack('<L', buffer[:4])[0]
 		RawBuffer = buffer
@@ -295,7 +305,7 @@ class CLoginServer(object):
 			if GS != None and GS.IsRegistered:
 				self.SetAccountServerChangeStatus(buffer, True)
 				
-		elif MsgID in [Packets.MSGID_REQUEST_CREATENEWGUILD, 
+		elif MsgID in [Packets.MSGID_REQUEST_CREATENEWGUILD,
 						Packets.MSGID_REQUEST_DISBANDGUILD,
 						Packets.MSGID_REQUEST_UPDATEGUILDINFO_NEWGUILDSMAN,
 						Packets.MSGID_REQUEST_UPDATEGUILDINFO_DELGUILDSMAN]:
@@ -362,10 +372,10 @@ class CLoginServer(object):
 			Last modified: 03-03-2010 by Drajwer
 			Ask Database to load config files, and store it as serialized data
 		"""
-		config_list = (('Item',	'<i30s9bh3bihh2hb2h3b', Packets.MSGID_ITEMCONFIGURATIONCONTENTS), 
+		config_list = (('Item', 	'<i30s9bh3bihh2hb2h3b', Packets.MSGID_ITEMCONFIGURATIONCONTENTS),
 						('Npc', '<30s5hi11hi6hi', Packets.MSGID_NPCCONFIGURATIONCONTENTS),
 						('Magic', '<i30s19i', Packets.MSGID_MAGICCONFIGURATIONCONTENTS),
-						('Quest', '<21i30s5i', Packets.MSGID_QUESTCONFIGURATIONCONTENTS), 
+						('Quest', '<21i30s5i', Packets.MSGID_QUESTCONFIGURATIONCONTENTS),
 						('Skill', '<i30s7i', Packets.MSGID_SKILLCONFIGURATIONCONTENTS),
 						('BuildItem', '<i30s23i', Packets.MSGID_BUILDITEMCONFIGURATIONCONTENTS),
 						('Potion', '<i30s14i', Packets.MSGID_PORTIONCONFIGURATIONCONTENTS))
@@ -391,9 +401,9 @@ class CLoginServer(object):
 				if reg.match(line) == None:
 					continue
 					
-				token = filter(lambda l: True if type(l) == int else (l.strip() != ""), map(lambda x: (lambda y: int(y) if y.isdigit() else y)(x.strip().replace('\t',' ').replace('\r', '').replace('\n','')), line.split('=')))
+				token = filter(lambda l: True if type(l) == int else (l.strip() != ""), map(lambda x: (lambda y: int(y) if y.isdigit() else y)(x.strip().replace('\t', ' ').replace('\r', '').replace('\n', '')), line.split('=')))
 				
-				if len(token)<2:
+				if len(token) < 2:
 					continue
 					
 				if token[0] == "login-server-address":
@@ -424,6 +434,7 @@ class CLoginServer(object):
 				if token[0] == "world-server-name":
 					self.WorldServerName = token[1]
 					PutLogList("(*) World Server Name : %s" % self.WorldServerName)
+					
 		finally:
 			fin.close()
 		return True
@@ -448,7 +459,7 @@ class CLoginServer(object):
 			Finding new GameServer
 			TODO: Convert to lambda
 		"""
-		return len(self.GameServer.keys())+1
+		return len(self.GameServer.keys()) + 1
 		
 	def TryRegisterGameServer(self, sender, data):
 		"""
@@ -478,7 +489,7 @@ class CLoginServer(object):
 			PutLogList("(!) %s is not in permitted address list and tries to register Game Server!" % sender.address, Logfile.HACK)
 			return (False, -1, None)
 			
-		if (lambda gs_name: [] != filter(lambda x:x, map(lambda y: y.Data.get('ServerName','') == gs_name, self.GameServer.values())))(Read['ServerName']):
+		if (lambda gs_name: [] != filter(lambda x:x, map(lambda y: y.Data.get('ServerName', '') == gs_name, self.GameServer.values())))(Read['ServerName']):
 			IP = filter(lambda x: x.Data['ServerName'] == Read['ServerName'], self.GameServer.values())
 			IP = IP[0].socket.address
 			PutLogList("(!) %s tries to login already registered server named %s [Registered from IP: %s] !" % (Read['ServerIP'], Read['ServerName'], ""), Logfile.HACK)
@@ -488,7 +499,7 @@ class CLoginServer(object):
 		GS = CGameServer(NGSID, sender)
 		GS.Data = Read
 		data = data[32:]
-		while len(data)>0:
+		while len(data) > 0:
 			map_name = nozeros(data[:11])
 			GS.MapName += [map_name]
 			data = data[11:]
@@ -506,8 +517,8 @@ class CLoginServer(object):
 		Buffer = chr(cKey) + struct.pack('<H', dwSize) + data
 		if cKey > 0:
 			for i in range(dwSize):
-				Buffer[3+i] = chr(ord(Buffer[3+i]) + (i ^ cKey))
-				Buffer[3+i] = chr(ord(Buffer[3+i]) ^ (cKey ^ (dwSize - i)))
+				Buffer[3 + i] = chr(ord(Buffer[3 + i]) + (i ^ cKey))
+				Buffer[3 + i] = chr(ord(Buffer[3 + i]) ^ (cKey ^ (dwSize - i)))
 		try:
 			GS.socket.client.send(Buffer)
 		except:
@@ -546,7 +557,7 @@ class CLoginServer(object):
 			Original Arye's src doesnt handle it very well
 			TODO: Disconnecting not responding game servers
 		"""
-		if len(data)<4:
+		if len(data) < 4:
 			PutLogList("GameServerAliveHandler: Size mismatch!")
 			return	
 		(MsgType, TotalPlayers) = struct.unpack('<hh', data[:4])
@@ -586,7 +597,7 @@ class CLoginServer(object):
 
 		if Header.cKey > 0:
 			Decode = lambda buffer, dwSize, cKey: "".join(map(lambda n: (lambda asdf: chr(asdf & 255))((ord(buffer[n]) ^ (cKey ^ (dwSize - n))) - (n ^ cKey)), range(len(buffer))))
-			buffer = Decode(buffer, Header.dwSize-3, Header.cKey)
+			buffer = Decode(buffer, Header.dwSize - 3, Header.cKey)
 				
 		MsgID = struct.unpack('<L', buffer[:4])[0]
 		buffer = buffer[4:]
@@ -612,7 +623,7 @@ class CLoginServer(object):
 	def MainSocket_OnClose(self, sender):
 		pass
 		
-	def SendMsgToClient(self, Sock, data, cKey = -1):
+	def SendMsgToClient(self, Sock, data, cKey= -1):
 		"""
 			Sending data to Client
 		"""
@@ -626,7 +637,7 @@ class CLoginServer(object):
 				buffer[i] = buffer[i] + (i ^ cKey)
 				buffer[i] = buffer[i] ^ (cKey ^ (len(buffer) - i))
 			buffer = "".join(map(lambda x: chr(x & 255) , buffer))
-		buffer = chr(cKey) + struct.pack('h', len(buffer)+3) + buffer
+		buffer = chr(cKey) + struct.pack('h', len(buffer) + 3) + buffer
 		Sock.client.send(buffer)
 		
 	def ProcessClientLogin(self, sender, buffer):
@@ -672,7 +683,7 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			
 		elif OK[0] == Account.WRONGPASS:
-			PutLogList( "(!) Wrong password: Account[ %s ] - Correct Password[ %s ] - Password received[ %s ]" % (Packet.AccountName, OK[2], OK[1]), Logfile.ERROR)
+			PutLogList("(!) Wrong password: Account[ %s ] - Correct Password[ %s ] - Password received[ %s ]" % (Packet.AccountName, OK[2], OK[1]), Logfile.ERROR)
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_PASSWORDMISMATCH)
 			self.SendMsgToClient(sender, SendData)
 			
@@ -683,7 +694,7 @@ class CLoginServer(object):
 			
 		elif OK[0] == Account.BLOCKED:
 			PutLogList("(!) Account %s blocked until %d-%d-%d and tries to login!" % (Packet.AccountName, OK[1], OK[2], OK[3]), Logfile.ERROR)
-			SendData = struct.pack('<Lh3i', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_REJECT, 
+			SendData = struct.pack('<Lh3i', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_REJECT,
 												OK[1], OK[2], OK[3]) #Y-m-d
 			self.SendMsgToClient(sender, SendData)
 			
@@ -756,18 +767,18 @@ class CLoginServer(object):
 			return
 			
 		CharList = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
-		Stat = [getattr(Packet, x) for x in ['Str','Vit','Dex','Int','Mag','Agi']]
+		Stat = [getattr(Packet, x) for x in ['Str', 'Vit', 'Dex', 'Int', 'Mag', 'Agi']]
 		print Stat
-		if filter(lambda x: x not in [10,11,12,13,14], Stat) < 6: #test if requested Stats are not in valid values
+		if filter(lambda x: x not in [10, 11, 12, 13, 14], Stat) < 6: #test if requested Stats are not in valid values
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Stat values not in [10, 11, 12, 13, 14]", Logfile.HACK)
 			return
 		
-		if reduce(lambda a,b: a+b, Stat) != 70: #if stats count does not compare 70
+		if reduce(lambda a, b: a + b, Stat) != 70: #if stats count does not compare 70
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
-			PutLogList("(!) Create new character -> Stat values %d/70!" % (reduce(lambda a,b: a+b, Stat)), Logfile.HACK)
+			PutLogList("(!) Create new character -> Stat values %d/70!" % (reduce(lambda a, b: a + b, Stat)), Logfile.HACK)
 			return
 			
 		if len(CharList) > 4: #more than 4 chars?
@@ -781,7 +792,7 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Create new character failed at CreateNewCharacter!", Logfile.HACK)
 		else:
-			SendData = struct.pack('<Lh10s',Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERCREATED,
+			SendData = struct.pack('<Lh10s', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERCREATED,
 											Packet.PlayerName)
 			SendData += self.GetCharList(Packet.AccountName, Packet.AccountPassword)
 			self.SendMsgToClient(sender, SendData)
@@ -913,7 +924,7 @@ class CLoginServer(object):
 										'IsOnServerChange': False,
 										'ForceDisconnRequestTime': None}]
 						
-						SendData = struct.pack('<Lh16sh20s', Packets.MSGID_RESPONSE_ENTERGAME, Packets.DEF_ENTERGAMERESTYPE_CONFIRM, 
+						SendData = struct.pack('<Lh16sh20s', Packets.MSGID_RESPONSE_ENTERGAME, Packets.DEF_ENTERGAMERESTYPE_CONFIRM,
 																GS['IP'], GS['Port'],
 																"") #ServerName?
 						PutLogList("(*) Client enter game : %s" % Packet.PlayerName)
@@ -1056,7 +1067,7 @@ class CLoginServer(object):
 				if key == "SkillMastery":
 					Data += struct.pack('B', value)
 					
-		Data += struct.pack('<10s2iB3i', 
+		Data += struct.pack('<10s2iB3i',
 									Ch['Nation'],
 									Ch['MP'],
 									Ch['SP'],
@@ -1130,7 +1141,7 @@ class CLoginServer(object):
 									
 		Data += struct.pack('<xB', len(OK['Bank'])) #Padding (1 byte), Bank items count
 		for each in OK['Bank']:
-			Data += struct.pack('<20sih3iB4h2i', 
+			Data += struct.pack('<20sih3iB4h2i',
 									each['ItemName'],
 									each['Count'],
 									each['ItemType'],
@@ -1179,9 +1190,9 @@ class CLoginServer(object):
 	def SavePlayerData(self, buffer, GS):
 		global packet_format
 		fmt = "<h10s10s10s"
-		s=map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
+		s = map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
 		Header = namedtuple("Header", "MsgType CharName AccountName AccountPassword")._make(s)
-		buffer = buffer[struct.calcsize(fmt)+1:]
+		buffer = buffer[struct.calcsize(fmt) + 1:]
 		Data = self.DecodeSavePlayerDataContents(buffer)
 		if self.Database.SavePlayerContents(Header.CharName, Header.AccountName, Header.AccountPassword, Data):
 			PutLogList("(!) Player [ %s ] data contents saved !" % Header.CharName)
@@ -1212,30 +1223,30 @@ class CLoginServer(object):
 		SkillsSize = struct.calcsize(SkillsFormat)
 		p = map(packet_format, struct.unpack(format, buffer[:ContentSize])) #Decode player contents + add profile
 		Content = namedtuple('Content', Values)._make(p) #Make named structure with player contents
-		Skills = struct.unpack(SkillsFormat,buffer[ContentSize:ContentSize + SkillsSize]) #Skills [24*Skill%, 24*SkillSSN]
+		Skills = struct.unpack(SkillsFormat, buffer[ContentSize:ContentSize + SkillsSize]) #Skills [24*Skill%, 24*SkillSSN]
 		Index = ContentSize + SkillsSize + 4
 		NItems = ord(buffer[Index])
 		Items = []
 		if NItems > 0:
 				for I in range(NItems):
-						IndexForItem = (471 + (I*60))
+						IndexForItem = (471 + (I * 60))
 						fmt = "<20sih3iB4hiB2hI"
 						Item = map(packet_format, struct.unpack(fmt, buffer[IndexForItem:IndexForItem + struct.calcsize(fmt)]))
 						Item = namedtuple('Item', "m_cName m_dwCount m_sTouchEffectType m_sTouchEffectValue1 m_sTouchEffectValue2 m_sTouchEffectValue3 m_cItemColor m_sItemSpecEffectValue1 m_sItemSpecEffectValue2 m_sItemSpecEffectValue3 m_wCurLifeSpan m_dwAttribute m_bIsItemEquipped X Y ItemUniqueID")._make(Item)
 						Items += [Item]
 
-		Index = 471+(NItems*60)
+		Index = 471 + (NItems * 60)
 		NBankItems = ord(buffer[Index])
 		BankItems = []
 		if NBankItems > 0:
 				for I in range(NBankItems):
-						IndexForItem = (Index+1+(I*55))
+						IndexForItem = (Index + 1 + (I * 55))
 						fmt = "<20sih3ib4h2i"
 						Item = map(packet_format, struct.unpack(fmt, buffer[IndexForItem:IndexForItem + 55]))
 						Item = namedtuple('Item', 'm_cName m_dwCount m_sTouchEffectType m_sTouchEffectValue1 m_sTouchEffectValue2 m_sTouchEffectValue3 m_cItemColor m_sItemSpecEffectValue1 m_sItemSpecEffectValue2 m_sItemSpecEffectValue3 m_wCurLifeSpan m_dwAttribute ItemUniqueID')._make(Item)
 						BankItems += [Item]
 					   
-		Index += (NBankItems*55)+1
+		Index += (NBankItems * 55) + 1
 		return {'Player': Content, 'Items': Items, 'BankItems': BankItems, 'Skills': Skills, 'Profile': buffer[Index:]}
 		
 	def IsAccountInUse(self, AccName):
@@ -1317,7 +1328,7 @@ class CLoginServer(object):
 		global packet_format
 		try:
 			fmt = "<h10s10s10sc"
-			s=map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
+			s = map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
 			Packet = namedtuple('Packet', 'MsgType PlayerName AccountName AccountPassword CountLogout')._make(s)
 			buffer = buffer[struct.calcsize(fmt):]
 		except:
@@ -1473,7 +1484,7 @@ class CLoginServer(object):
 		elif MsgID == Packets.MSGID_REQUEST_UPDATEGUILDINFO_NEWGUILDSMAN:
 			fmt = '<10s20s'
 			Data = map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
-			Packet = namedtuple('Packet','CharName GuildName')._make(Data)
+			Packet = namedtuple('Packet', 'CharName GuildName')._make(Data)
 			if self.Database.AddGuildMember(*Data):
 				PutLogList("(O) New guild member success! Guild[ %s ] Player[ %s ]" % (Packet.GuildName, Packet.CharName))
 			else:
@@ -1482,7 +1493,7 @@ class CLoginServer(object):
 		elif MsgID == Packets.MSGID_REQUEST_UPDATEGUILDINFO_DELGUILDSMAN:
 			fmt = '<10s20s'
 			Data = map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
-			Packet = namedtuple('Packet','CharName GuildName')._make(Data)
+			Packet = namedtuple('Packet', 'CharName GuildName')._make(Data)
 			if self.Database.DeleteGuildMember(*Data):
 				PutLogList("(O) Deleting guild member [ %s ] of guild [ %s ] success!" % (Packet.CharName, Packet.GuildName))
 			else:
