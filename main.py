@@ -31,26 +31,49 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-import sys
+import sys, re
 from LoginServer import CLoginServer
+from Frontend import GUI
+
+class Console:
+	@staticmethod
+	def Print(text):
+		print text
 
 def main():
-	print "OpenHelbreath Login Server experimental" # Last stable revision
-	print "Copyright (C) 2009-2010 by openhelbreath team"
-	print "This program comes with ABSOLUTELY NO WARRANTY."
-	print "This is free software, and you are welcome to redistribute it under certain conditions."
-	print
+	cfg_frontend = re.compile("frontend\s+=\s+(\w+)").findall(open("LServer.cfg", "rb").read())
+	cfg_frontend = cfg_frontend[0].lower() in ["on", "enabled", "1", "true"] if cfg_frontend else False
+	Print = Console.Print
+	interface = None
+	if cfg_frontend:
+		print "Init gui..."
+		interface = GUI()
+		interface.start()
+		Print = interface.AddLog
+		
+	Print("OpenHelbreath Login Server experimental") # Last stable revision
+	Print("Copyright (C) 2009-2010 by openhelbreath team")
+	Print("This program comes with ABSOLUTELY NO WARRANTY.")
+	Print("This is free software, and you are welcome to redistribute it under certain conditions.") 
+	Print("")
 		
 	Server = CLoginServer()
+	Server.GUI = interface
+	if interface:
+		interface.LoginServer = Server
+		
 	if not Server.DoInitialSetup():
-		print "(!) Stopped!"
+		Print("(!) Stopped!")
 		del Server
 		return False
 	
 	if not Server.InitServer():
 		del Server
 		return False
-		
+	
+	if interface:
+		return
+	
 	while True:
 		try:
 			q = raw_input(">>> ")
