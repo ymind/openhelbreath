@@ -32,12 +32,14 @@ import socket, os, sys, select, struct, time, re, random, operator
 from Enum import Enum
 from threading import Thread, Semaphore, Event
 from NetMessages import Packets
-from GlobalDef import DEF, Account, Logfile, Version
+from GlobalDef import DEF, AccountInfo, Logfile, Version
 from Helpers import Callbacks, PutLogFileList, PutLogList
 from Sockets import ServerSocket
-from Database import DatabaseDriver
+from Database import Account, Character, DatabaseDriver
 from collections import namedtuple
 from Timer import TimerManager
+
+from sqlalchemy.exc import *
 
 nozeros = lambda x: x[0:x.find('\x00')] if x.find('\x00')>-1 else x
 fillzeros = lambda txt, count: (txt + ("\x00" * (count-len(txt))))[:count]
@@ -129,18 +131,6 @@ class CLoginServer(object):
 			print "update\t\t: Send updated configuration files to all servers"
 			print "exit\t\t: Instant quit"
 			return
-		elif tok[0].lower() == "kill":
-			for (id, gs) in self.GameServer.items():
-				#print id
-				gs.socket.disconnect()
-				#for i in gs.GameServerSocket:
-				#	i.disconnect()
-				#del gs.socket
-				
-			return
-		elif tok[0].lower() == "exit":
-			sys.exit(1)
-			return
 		print "(***) Unknown command: %s" % tok[0].upper()
 		
 	def DoInitialSetup(self):
@@ -150,11 +140,14 @@ class CLoginServer(object):
 		"""
 		if not self.ReadProgramConfigFile("LServer.cfg"):
 			return False
+		
 		self.Database = DatabaseDriver()
-		if not self.Database.Initialize():
+		if not self.Database.Initialize(self.DatabaseAddress):
 			PutLogList("(!) DatabaseDriver initialization fails!")
 			return False
+		
 		return True
+		
 		
 	def GateServer_OnConnect(self, sender):
 		"""
@@ -173,7 +166,7 @@ class CLoginServer(object):
 		"""
 		for (k, i) in self.GameServer.items():
 			if i.socket == sender:
-				PutLogList("(*) Game Server %s -> Lost connection", Logfile.ERROR)
+				PutLogList("(*) Game Server %s -> Lost connection" % i.Data['ServerName'], Logfile.ERROR)
 			else:
 				for j in i.GameServerSocket:
 					if j == sender:
@@ -207,7 +200,8 @@ class CLoginServer(object):
 		for i in self.GameServer.values():
 			for j in i.GameServerSocket:
 				if j == sender:
-					return i    
+					return i
+		
 				
 	def GateServer_OnReceive(self, sender, buffer):
 		"""
@@ -302,12 +296,13 @@ class CLoginServer(object):
 			GS = self.SockToGS(sender)
 			if GS != None and GS.IsRegistered:
 				self.GuildHandler(MsgID, buffer, GS)
+				
 		else:
 			if MsgID in Packets:
 				PutLogFileList("MsgID: %s (0x%08X) %db * %s" % (Packets.reverse_lookup_without_mask(MsgID), MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
 			else:
 				PutLogFileList("MsgID: 0x%08X %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
-		
+				
 	def GateServer_OnClose(self, sender, size):
 		"""
 			Triggered when Gate Server thread is closed
@@ -349,31 +344,19 @@ class CLoginServer(object):
 		PutLogList("(*) Login server sucessfully started!")
 		
 		return True
-		
-	def __serialize(self, data, fmt):
-		_out = struct.pack('<i', len(data))
-		for l in data:
-			l = map(lambda x: int(x) if str(x).isdigit() else x, l)
-			_out += struct.pack(fmt, *l)
-		return _out		
-		
+			
 	def bReadAllConfig(self):
 		"""
-			Last modified: 03-03-2010 by Drajwer
-			Ask Database to load config files, and store it as serialized data
+			Reading HG cfgs in order
 		"""
-		config_list = (('Item',	'<i30s9bh3bihh2hb2h3b', Packets.MSGID_ITEMCONFIGURATIONCONTENTS), 
-						('Npc', '<30s5hi11hi6hi', Packets.MSGID_NPCCONFIGURATIONCONTENTS),
-						('Magic', '<i30s19i', Packets.MSGID_MAGICCONFIGURATIONCONTENTS),
-						('Quest', '<21i30s5i', Packets.MSGID_QUESTCONFIGURATIONCONTENTS), 
-						('Skill', '<i30s7i', Packets.MSGID_SKILLCONFIGURATIONCONTENTS),
-						('BuildItem', '<i30s23i', Packets.MSGID_BUILDITEMCONFIGURATIONCONTENTS),
-						('Potion', '<i30s14i', Packets.MSGID_PORTIONCONFIGURATIONCONTENTS))
-								
+		Files = ["Item.cfg", "Item2.cfg", "Item3.cfg", "Item4.cfg", "BuildItem.cfg",
+				"DupItemID.cfg", "Magic.cfg", "noticement.txt", 
+				"NPC.cfg", "Potion.cfg", "Quest.cfg", "Skill.cfg",
+				"AdminSettings.cfg", "Settings.cfg"]
 		self.Config = {}
-		for (name, fmt, config) in config_list:
-			self.Config[config] = self.__serialize(self.Database.ReadConfig(config), fmt)
-			PutLogList("(*) Loading %s configuration data... %d bytes." % (name, len(self.Config[config])))
+		for n in Files:
+			if not self.ReadConfig("Config/%s" % n):
+				return False
 		return True
 		
 	def ReadProgramConfigFile(self, cFn):
@@ -424,6 +407,26 @@ class CLoginServer(object):
 				if token[0] == "world-server-name":
 					self.WorldServerName = token[1]
 					PutLogList("(*) World Server Name : %s" % self.WorldServerName)
+					
+				if token[0] == "database-address":
+					self.DatabaseAddress = token[1]
+					PutLogList("(*) Database address: %s" % self.DatabaseAddress)
+		finally:
+			fin.close()
+		return True
+			
+	def ReadConfig(self, FileName):
+		"""
+			Read contents of file to Config dict
+		"""
+		if not os.path.exists(FileName) and not os.path.isfile(FileName):
+			PutLogList("(!) Cannot open configuration file [%s]." % FileName)
+			return False
+		key = FileName.split('/')[-1].split(".")[0]
+		fin = open(FileName,'r')
+		PutLogList("(*) Reading configuration file [%s] -> {'%s'}..." % (FileName, key))
+		try:
+			self.Config[key] = fin.read()
 		finally:
 			fin.close()
 		return True
@@ -456,7 +459,6 @@ class CLoginServer(object):
 			TODO: Detect more security vuln
 			Returns: Tuple ( OK/Fail, GS_ID/-1, CGameServer instance/None)
 		"""
-		
 		global nozeros
 		Read = {}
 		Request = struct.unpack('h', data[:2])[0]
@@ -508,17 +510,34 @@ class CLoginServer(object):
 			for i in range(dwSize):
 				Buffer[3+i] = chr(ord(Buffer[3+i]) + (i ^ cKey))
 				Buffer[3+i] = chr(ord(Buffer[3+i]) ^ (cKey ^ (dwSize - i)))
-		try:
-			GS.socket.client.send(Buffer)
-		except:
-			pass
-			
+		GS.socket.client.send(Buffer)
+		
 	def SendConfigToGS(self, GS):
 		"""
 			Send config to Game Server. Much shorter than in Arye's src!
 		"""
-		for (id, data) in self.Config.items():
-			SendCfgData = struct.pack('<Lh', id, 0) + data#self.__serialize(data)
+		Order = (
+					(Packets.MSGID_ITEMCONFIGURATIONCONTENTS, 'Item'),
+					(Packets.MSGID_ITEMCONFIGURATIONCONTENTS, 'Item2'),
+					(Packets.MSGID_ITEMCONFIGURATIONCONTENTS, 'Item3'),
+					(Packets.MSGID_ITEMCONFIGURATIONCONTENTS, 'Item4'),
+					(Packets.MSGID_BUILDITEMCONFIGURATIONCONTENTS, 'BuildItem'),
+					(Packets.MSGID_DUPITEMIDFILECONTENTS, 'DupItemID'),
+					(Packets.MSGID_MAGICCONFIGURATIONCONTENTS, 'Magic'),
+					(Packets.MSGID_NOTICEMENTFILECONTENTS, 'noticement'),
+					(Packets.MSGID_NPCCONFIGURATIONCONTENTS, 'NPC'),
+					(Packets.MSGID_PORTIONCONFIGURATIONCONTENTS, 'Potion'),
+					(Packets.MSGID_QUESTCONFIGURATIONCONTENTS, 'Quest'),
+					(Packets.MSGID_SKILLCONFIGURATIONCONTENTS, 'Skill'), 
+					(Packets.MSGID_ADMINSETTINGSCONFIGURATIONCONTENTS, 'AdminSettings'),
+					(Packets.MSGID_SETTINGSCONFIGURATIONCONTENTS, 'Settings')
+				)
+				
+		for packet_id, key in Order:
+			if not key in self.Config:
+				PutLogList("%s config not loaded!" % key, Logfile.ERROR)
+				break
+			SendCfgData = struct.pack('Lh', packet_id, 0) + self.Config[key]
 			self.SendMsgToGS(GS, SendCfgData)
 
 	def RegisterGameServerSocket(self, sender, data):
@@ -660,8 +679,11 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			return
 			
-		OK = self.Database.CheckAccountLogin(Packet.AccountName, Packet.AccountPassword)
-		if OK[0] == Account.OK:
+		#OK = self.Database.CheckAccountLogin(Packet.AccountName, Packet.AccountPassword)
+		account = Account.ByName(self.Database.session(), Packet.AccountName)		
+		
+		"""
+		if account:
 			PutLogList("(*) Login success: %s" % Packet.AccountName)
 			SendData = struct.pack('<L3hB12s', Packets.MSGID_RESPONSE_LOG, Packets.DEF_MSGTYPE_CONFIRM,
 												Version.UPPER, Version.LOWER,
@@ -670,21 +692,26 @@ class CLoginServer(object):
 			ChLst = self.GetCharList(Packet.AccountName, Packet.AccountPassword)
 			SendData += ChLst
 			self.SendMsgToClient(sender, SendData)
-			
-		elif OK[0] == Account.WRONGPASS:
-			PutLogList( "(!) Wrong password: Account[ %s ] - Correct Password[ %s ] - Password received[ %s ]" % (Packet.AccountName, OK[2], OK[1]), Logfile.ERROR)
-			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_PASSWORDMISMATCH)
-			self.SendMsgToClient(sender, SendData)
-			
-		elif OK[0] == Account.NOTEXISTS:
+		"""
+		if not account:
 			PutLogList("(!) Account does not exists: %s" % Packet.AccountName, Logfile.ERROR)
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGACCOUNT)
 			self.SendMsgToClient(sender, SendData)
 			
-		elif OK[0] == Account.BLOCKED:
-			PutLogList("(!) Account %s blocked until %d-%d-%d and tries to login!" % (Packet.AccountName, OK[1], OK[2], OK[3]), Logfile.ERROR)
-			SendData = struct.pack('<Lh3i', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_REJECT, 
-												OK[1], OK[2], OK[3]) #Y-m-d
+		elif account.Password != Packet.AccountPassword:
+			PutLogList("(!) Wrong password: Account[ %s ] - Correct Password[ %s ] - Password received[ %s ]" % (Packet.AccountName, account.Password, Packet.AccountPassword), Logfile.ERROR)
+			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_PASSWORDMISMATCH)
+			self.SendMsgToClient(sender, SendData)
+		else:
+			PutLogList("(*) Login success: %s" % Packet.AccountName)
+			SendData = struct.pack('<L3hB12x', Packets.MSGID_RESPONSE_LOG, Packets.DEF_MSGTYPE_CONFIRM,
+												Version.UPPER, Version.LOWER,
+												0
+												#+ dates(?) as 12 pad bytes
+												)
+			
+			ChLst = self.GetCharList(account)
+			SendData += ChLst
 			self.SendMsgToClient(sender, SendData)
 			
 	def ChangePassword(self, sender, buffer):
@@ -699,32 +726,32 @@ class CLoginServer(object):
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			return
-
-		OK = self.Database.CheckAccountLogin(Packet.Login, Packet.Password)
 		
-		if Packet.NewPass1 != Packet.NewPass2 or len(Packet.NewPass1) < 8 or len(Packet.NewPass2) < 8:
+#		OK = self.Database.CheckAccountLogin(Packet.Login, Packet.Password)
+		session = self.Database.session()
+		account = Account.ByName(session, Packet.Login)
+				
+		if Packet.NewPass1 != Packet.NewPass2 or len(Packet.NewPass1) < 8 or len(Packet.NewPass2) < 8 or not account:
 			PutLogList("(!) Password changed on account %s (%s -> %s) FAIL! (Password confirmation)" % (Packet.Login, Packet.Password, Packet.NewPass1))
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_CHANGEPASSWORD, Packets.DEF_LOGRESMSGTYPE_PASSWORDCHANGEFAIL)
 			self.SendMsgToClient(sender, SendData)
 			return
-			
-		if OK[0] == Account.WRONGPASS:
+		
+		if account.Password != Packet.Password:
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_CHANGEPASSWORD, Packets.DEF_LOGRESMSGTYPE_PASSWORDMISMATCH)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Password changed on account %s (%s -> %s) FAIL! (Password mismatch)" % (Packet.Login, Packet.Password, Packet.NewPass1))
-			return
-			
-		if OK[0] != Account.OK:
-			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_CHANGEPASSWORD, Packets.DEF_LOGRESMSGTYPE_PASSWORDCHANGEFAIL)
-			self.SendMsgToClient(sender, SendData)
-			PutLogList("(!) Password changed on account %s (%s -> %s) FAIL! (%s)" % (Packet.Login, Packet.Password, Packet.NewPass1, Account.reverse_lookup_without_mask(OK[0])))
-			return
-			
-		if self.Database.ChangePassword(Packet.Login, Packet.Password, Packet.NewPass1):
+			return		
+		
+		account.Password = Packet.NewPass1
+		
+		try:
+			session.commit()
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_CHANGEPASSWORD, Packets.DEF_LOGRESMSGTYPE_PASSWORDCHANGESUCCESS)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(*) Password changed on account %s (%s -> %s) SUCCESS!" % (Packet.Login, Packet.Password, Packet.NewPass1))
-		else:
+		except:	
+			session.rollback()
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_CHANGEPASSWORD, Packets.DEF_LOGRESMSGTYPE_PASSWORDCHANGEFAIL)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Password changed on account %s (%s -> %s) FAIL! (Database failed)" % (Packet.Login, Packet.Password, Packet.NewPass1))
@@ -757,7 +784,6 @@ class CLoginServer(object):
 			
 		CharList = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
 		Stat = [getattr(Packet, x) for x in ['Str','Vit','Dex','Int','Mag','Agi']]
-		print Stat
 		if filter(lambda x: x not in [10,11,12,13,14], Stat) < 6: #test if requested Stats are not in valid values
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
@@ -787,9 +813,13 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(*) Create new character -> Create new character success on account %s [CharName: %s ]!" % (Packet.AccountName, Packet.PlayerName))
 
-	def GetCharList(self, account_name, account_password):
+	def GetCharList(self, account_instance):
 		global fillzeros
-		CharList = self.Database.GetAccountCharacterList(account_name, account_password)
+		"""
+		acc = Account.Match(self.Database.session(), account_name, account_password)
+		if not acc:
+			
+		CharList = Acc
 		Buffer = chr(len(CharList))		
 		for Char in CharList:
 			Tmp = struct.pack('<10sB6h2i6h12s10s',
@@ -804,6 +834,11 @@ class CLoginServer(object):
 							"", #will be converted to 12 * \0x00 -> Logout date
 							Char['MapLoc'])
 			Buffer += Tmp
+		"""
+		Buffer = chr(0)
+		for Char in account_instance.CharList:
+			print Char
+			
 		return Buffer
 		
 	def DeleteCharacter(self, sender, buffer):
@@ -843,19 +878,40 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			return
 		
-		OK = self.Database.CreateNewAccount(Packet.AccountName, Packet.AccountPassword, Packet.Mail, Packet.AccountQuiz, Packet.AccountAnswer, sender.address)
-		if OK == Account.OK:
-			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWACCOUNTCREATED)
-			self.SendMsgToClient(sender, SendData)
-			PutLogList("(*) Create account success [ %s/%s ]." % (Packet.AccountName, Packet.Mail))
-		elif OK == Account.FAIL:
+		#OK = self.Database.CreateNewAccount(Packet.AccountName, Packet.AccountPassword, Packet.Mail, Packet.AccountQuiz, Packet.AccountAnswer, sender.address)
+		session = self.Database.session()
+		
+		new_account = Account(Packet.AccountName,
+							  Packet.AccountPassword,
+							  Packet.Mail,
+							  Packet.AccountQuiz,
+							  Packet.AccountAnswer,
+							  sender.address) # IP
+		
+		session.add(new_account)
+		try:
+			session.commit()
+		except IntegrityError, errstr:
+			print errstr
+			if "is not unique" in str(errstr):
+				#PutLogList("(!) Already existing account - %s." % account_name)
+				SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_ALREADYEXISTINGACCOUNT)
+				self.SendMsgToClient(sender, SendData)
+				PutLogList("(!) Create account fails [ %s ]. Account already exists" % Packet.AccountName, Logfile.HACK)
+				return
+			else:
+				PutLogFileList(str(errstr), Logfile.MYSQL)
+		except OperationalError, errstr:
+			print errstr
+			session.rollback()
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWACCOUNTFAILED)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create account fails [ %s ]. Unknown error occured!" % Packet.AccountName, Logfile.HACK)
-		elif OK == Account.EXISTS:
-			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_ALREADYEXISTINGACCOUNT)
-			self.SendMsgToClient(sender, SendData)
-			PutLogList("(!) Create account fails [ %s ]. Account already exists" % Packet.AccountName, Logfile.HACK)
+			return
+
+		SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWACCOUNTCREATED)
+		self.SendMsgToClient(sender, SendData)
+		PutLogList("(*) Create account success [ %s/%s ]." % (Packet.AccountName, Packet.Mail))
 
 	def ProcessClientRequestEnterGame(self, sender, buffer):
 		try:
@@ -929,8 +985,10 @@ class CLoginServer(object):
 						SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_ENTERGAME, Packets.DEF_ENTERGAMERESTYPE_FORCEDISCONN)
 						self.SendMsgToClient(sender, SendData)
 					else:
-						#SAFEDELETE(ClientSocket[ClientID]);
-						print "TODO: DEF_ENTERGAMEMSGTYPE_NOENTER_FORCEDISCONN delete ClientSocket[] (?)"
+						# This is supposed to be called when HG kills player too soon after login
+						# TODO: auto remove dead(idle) accounts
+						self.Clients.remove(self.Clients[ID])
+						print "DEF_ENTERGAMEMSGTYPE_NOENTER_FORCEDISCONN delete ClientSocket[] (?)"
 
 			elif Packet.MsgType == Packets.DEF_ENTERGAMEMSGTYPE_CHANGINGSERVER:
 				# Removed ip check - Aryes made request here to getpeeraddress and compare with self.clients
@@ -1156,7 +1214,8 @@ class CLoginServer(object):
 		buffer = buffer[1:]
 
 		if ID == Packets.GSM_DISCONNECT:
-			PlayerName = struct.unpack('<10s', buffer[:10])
+			PlayerName, = struct.unpack('<10s', buffer[:10])
+			PlayerName = nozeros(PlayerName)
 			ok = False
 			for i in self.Clients:
 				if i['CharName'] == PlayerName:
@@ -1418,7 +1477,7 @@ class CLoginServer(object):
 	def __gameserver_alive(self):
 		CGameServer.GS_Lock.acquire()
 		for (k, v) in self.GameServer.items():
-			if abs(v.AliveResponseTime - time.time()) >= 5:
+			if abs(v.AliveResponseTime - time.time()) >= 10:
 				PutLogList("(*) Game Server : %s@%s:%d (%d maps) is not responding!" % (v.Data['ServerName'], v.Data['ServerIP'], v.Data['ServerPort'], len(v.MapName)))
 				while v.GameServerSocket != []:
 					s = v.GameServerSocket.pop(0)
@@ -1449,7 +1508,6 @@ class CLoginServer(object):
 			Data = map(packet_format, struct.unpack(fmt, buffer))
 			Packet = namedtuple('Packet', 'CharName AccountName AccountPassword GuildName GuildLoc')._make(Data)
 			(OK, GUID) = self.Database.CreateNewGuild(*Data)
-			print (OK, GUID)
 			if OK:
 				PutLogList("(O) Guild[ %s ] registration success. Player[ %s ]" % (Packet.GuildName, Packet.CharName))
 				SendData = struct.pack('<Lh10sI', Packets.MSGID_RESPONSE_CREATENEWGUILD, Packets.DEF_LOGRESMSGTYPE_CONFIRM, Packet.CharName, GUID)

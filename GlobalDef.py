@@ -37,7 +37,7 @@ class DEF:
 	MAXPARTYNUMBER = 200
 	MAXLOGLINESIZE = 5000
 
-class Account:
+class AccountInfo:
 	NOTEXISTS = 0
 	WRONGPASS = 1	
 	OK = 2
