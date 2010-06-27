@@ -60,4 +60,4 @@ class Logfile:
 
 class Version:
 	UPPER = 3
-	LOWER = 82
+	LOWER = 51
