@@ -3,7 +3,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import *
 from sqlalchemy.sql import exists
 from sqlalchemy.sql.expression import *
-from sqlalchemy import MetaData, Table, Column, DateTime, SmallInteger, Integer, String, ForeignKey, create_engine
+from sqlalchemy import (MetaData, Table, Column, DateTime, SmallInteger, Integer,
+					   String, ForeignKey, create_engine,
+					   and_, or_)
 
 import time, random, os, re, datetime
 from Helpers import PutLogFileList, PutLogList
@@ -44,10 +46,11 @@ class Account(Base):
 		except NoResultFound:
 			return False
 	@staticmethod
-	def Match( session, name, pwd):
+	def Match(session, name, pwd):
 		try:
 			return session.query(Account).\
-				filter(_and(Account.Name == name, Account.Password == pwd)).\
+				filter(Account.Name == name).\
+				filter(Account.Password == pwd).\
 				one()
 		except NoResultFound:
 			return False
@@ -128,8 +131,17 @@ class Character(Base):
 	GizonItemUpgradeLeft = Column(Integer, default = 0)
 
 	Account = relationship(Account, backref = backref("CharList", order_by = Level))
+	@staticmethod
+	def Exists(session, Name):
+		try:
+			return session.query(Character).\
+				filter(Character.CharName == Name).\
+				one()
+		except NoResultFound:
+			return False	
 	def __init__(self, CharName, Gender, SkinColor,
 				 HairStyle, HairColor, UnderColor, Str, Dex, Int, Mag, Vit, Chr):
+		# TODO : fix ApprX values!
 		self.CharName = CharName
 		self.Gender = int(Gender)
 		self.Skin = int(SkinColor)

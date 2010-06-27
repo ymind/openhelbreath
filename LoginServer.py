@@ -681,18 +681,15 @@ class CLoginServer(object):
 			
 		#OK = self.Database.CheckAccountLogin(Packet.AccountName, Packet.AccountPassword)
 		account = Account.ByName(self.Database.session(), Packet.AccountName)		
-		
-		"""
-		if account:
+		"""if account:
 			PutLogList("(*) Login success: %s" % Packet.AccountName)
 			SendData = struct.pack('<L3hB12s', Packets.MSGID_RESPONSE_LOG, Packets.DEF_MSGTYPE_CONFIRM,
 												Version.UPPER, Version.LOWER,
 												0, #account status
 												'') #dates, converted to 12 * \0x00
-			ChLst = self.GetCharList(Packet.AccountName, Packet.AccountPassword)
+			ChLst = self.GetCharList(account)
 			SendData += ChLst
-			self.SendMsgToClient(sender, SendData)
-		"""
+			self.SendMsgToClient(sender, SendData)"""
 		if not account:
 			PutLogList("(!) Account does not exists: %s" % Packet.AccountName, Logfile.ERROR)
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGACCOUNT)
@@ -768,23 +765,30 @@ class CLoginServer(object):
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			return
-			
-		OK = self.Database.CheckAccountLogin(Packet.AccountName, Packet.AccountPassword)
-		if OK[0] != Account.OK or Packet.PlayerName == "" or Packet.WS != self.WorldServerName:
+		
+		sess = self.Database.session()
+		account = Account.Match(sess, Packet.AccountName, Packet.AccountPassword)
+		if not account or Packet.PlayerName == "" or Packet.WS != self.WorldServerName:
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Wrong account data on creating new character!", Logfile.HACK)
 			return
-			
-		if self.Database.CharacterExists(Packet.PlayerName):
+		
+		if Character.Exists(sess, Packet.PlayerName):
+		#if filter(lambda ch: ch.CharName == Packet.PlayerName, account.CharList):
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_ALREADYEXISTINGCHARACTER)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Character %s already exists." % Packet.PlayerName, Logfile.HACK)
 			return
-			
-		CharList = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
+		
+		if len(account.CharList) >= 4: #more than 4 chars?
+			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
+			self.SendMsgToClient(sender, SendData)
+			PutLogList("(!) Create new character -> Account %s tries make to more than 4 characters!" % Packet.AccountName, Logfile.HACK)
+			return
+		#CharList = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
 		Stat = [getattr(Packet, x) for x in ['Str','Vit','Dex','Int','Mag','Agi']]
-		if filter(lambda x: x not in [10,11,12,13,14], Stat) < 6: #test if requested Stats are not in valid values
+		if filter(lambda x: x not in [10, 11, 12, 13, 14], Stat): #test if requested Stats are not in valid values
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Stat values not in [10, 11, 12, 13, 14]", Logfile.HACK)
@@ -795,50 +799,58 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Stat values %d/70!" % (reduce(lambda a,b: a+b, Stat)), Logfile.HACK)
 			return
-			
-		if len(CharList) > 4: #more than 4 chars?
-			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
-			self.SendMsgToClient(sender, SendData)
-			PutLogList("(!) Create new character -> Account %s tries make to more than 4 characters!" % Packet.AccountName, Logfile.HACK)
-			return
 		
-		if not self.Database.CreateNewCharacter(Packet):
+		NewChar = Character(Packet.PlayerName,
+							Packet.Gender,
+							Packet.SkinCol,
+							Packet.HairStyle,
+							Packet.HairCol,
+							Packet.UnderCol,
+							Packet.Str,
+							Packet.Dex,
+							Packet.Int,
+							Packet.Mag,
+							Packet.Vit,
+							Packet.Agi)
+		
+		account.CharList.append(NewChar)
+		
+		try:
+			sess.commit()	
+		except:
+			print "Except :("
+			sess.rollback()
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERFAILED)
 			self.SendMsgToClient(sender, SendData)
 			PutLogList("(!) Create new character -> Create new character failed at CreateNewCharacter!", Logfile.HACK)
-		else:
-			SendData = struct.pack('<Lh10s',Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERCREATED,
-											Packet.PlayerName)
-			SendData += self.GetCharList(Packet.AccountName, Packet.AccountPassword)
-			self.SendMsgToClient(sender, SendData)
-			PutLogList("(*) Create new character -> Create new character success on account %s [CharName: %s ]!" % (Packet.AccountName, Packet.PlayerName))
+			return
+		SendData = struct.pack('<Lh10s',Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NEWCHARACTERCREATED,
+										Packet.PlayerName)
+		SendData += self.GetCharList(account)
+		self.SendMsgToClient(sender, SendData)
+		PutLogList("(*) Create new character -> Create new character success on account %s [CharName: %s ]!" % (Packet.AccountName, Packet.PlayerName))
 
 	def GetCharList(self, account_instance):
 		global fillzeros
-		"""
-		acc = Account.Match(self.Database.session(), account_name, account_password)
-		if not acc:
-			
-		CharList = Acc
-		Buffer = chr(len(CharList))		
-		for Char in CharList:
-			Tmp = struct.pack('<10sB6h2i6h12s10s',
-							Char['char_name'],
-							1, #wtf?
-							Char['Appr1'], Char['Appr2'], Char['Appr3'], Char['Appr4'],
-							Char['Gender'],
-							Char['Skin'],
-							Char['Level'],
-							Char['Exp'],
-							Char['Strength'], Char['Vitality'], Char['Dexterity'], Char['Intelligence'], Char['Magic'], Char['Agility'],
-							"", #will be converted to 12 * \0x00 -> Logout date
-							Char['MapLoc'])
-			Buffer += Tmp
-		"""
-		Buffer = chr(0)
+		Buffer = chr(len(account_instance.CharList))
 		for Char in account_instance.CharList:
-			print Char
-			
+			print Char.CharName, Char.MapLoc, type(Char.MapLoc), type(str(Char.MapLoc)), Char.Appr1, Char.Appr2
+			Tmp = struct.pack('<10sB6h2i6h12x10s',
+							*map(lambda fld: int(fld) if fld.isdigit() else str(fld),
+								[Char.CharName,
+								 1, #wtf?
+								 Char.Appr1,
+								 Char.Appr2,
+								 Char.Appr3,
+								 Char.Appr4,
+								 Char.Gender,
+								 Char.Skin,
+								 Char.Level,
+								 Char.Experience,
+								 Char.Strength, Char.Vitality, Char.Dexterity, Char.Intelligence,
+								 Char.Magic, Char.Charisma, #"", #will be converted to 12 * \0x00 -> Logout date
+								 Char.MapLoc]))
+			Buffer += Tmp		
 		return Buffer
 		
 	def DeleteCharacter(self, sender, buffer):
