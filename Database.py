@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.exc import *
 from sqlalchemy.sql import exists
 from sqlalchemy.sql.expression import *
-from sqlalchemy import (MetaData, Table, Column, DateTime, SmallInteger, Integer,
+from sqlalchemy import (MetaData, Table, Column, DateTime, SmallInteger, Integer, Boolean,
 					   String, ForeignKey, create_engine,
 					   and_, or_)
 
@@ -55,6 +55,9 @@ class Account(Base):
 		except NoResultFound:
 			return False
 		
+	def Has(self, player_name):
+		return filter(lambda ch: ch.CharName == player_name, self.CharList)
+	
 class Character(Base):
 	__tablename__ = "character"
 	AccountID = Column(Integer, ForeignKey("account.AccountID"))
@@ -129,8 +132,8 @@ class Character(Base):
 	MagicMastery = Column(String(100), default = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
 	PartyID = Column(Integer, default = 0)
 	GizonItemUpgradeLeft = Column(Integer, default = 0)
-
 	Account = relationship(Account, backref = backref("CharList", order_by = Level))
+	
 	@staticmethod
 	def Exists(session, Name):
 		try:
@@ -138,7 +141,8 @@ class Character(Base):
 				filter(Character.CharName == Name).\
 				one()
 		except NoResultFound:
-			return False	
+			return False
+		
 	def __init__(self, CharName, Gender, SkinColor,
 				 HairStyle, HairColor, UnderColor, Str, Dex, Int, Mag, Vit, Chr):
 		# TODO : fix ApprX values!
@@ -154,10 +158,87 @@ class Character(Base):
 		self.Magic = Mag
 		self.Vitality = Vit
 		self.Charisma = Chr
-		
+		self.Appr1 = (HairStyle << 8) | (HairColor << 4) | (UnderColor)
+		self.HP = (Vit * 3) + (Str / 2) + 2
+		self.MP = (Mag * 2) + (Int / 2) + 2
+		self.SP = (Str * 2) + 2
+		self.CreateDate = datetime.datetime.now()
+		self.AddItem(56, "Gold", 0, 0, 0, 0, 65, 30)
+		for s in range(24):
+			if s in [4, 5, 7]:
+				SkillMastery = 20
+			elif s == 3:
+				SkillMastery = 3
+			else:
+				SkillMastery = 0
+			self.Skills.append(Skill(SkillID = s,
+									 SkillMastery = SkillMastery))
 	def __repr__(self):
 		return "<Character(CharName = '%s', Level = '%d')>" % (self.CharName, self.Level)
-
+	
+	def AddItem(self, _ID, _Name, _LifeSpan, _Color, _Attr, _Equip, _X, _Y):
+		self.Items.append(Item(
+							Name = _Name,
+							ItemID = _ID,
+							Color = _Color,
+							LifeSpan = _LifeSpan,
+							Attribute = _Attr,
+							Equip = _Equip,
+							X = _X,
+							Y = _Y
+							))
+		
+class BankItem(Base):
+	__tablename__ = "bankitem"
+	ID = Column(Integer, primary_key = True)
+	CharID = Column(Integer, ForeignKey("character.CharacterID"))
+	Name = Column(String(20), nullable = False)
+	ItemID = Column(Integer, nullable = False)
+	Count = Column(Integer, default = 1)
+	Type = Column(Integer, default = 0)
+	ID1 = Column(Integer, default = 0)
+	ID2 = Column(Integer, default = 0)
+	ID3 = Column(Integer, default = 0)
+	Color = Column(Integer, default = 0)
+	Effect1 = Column(Integer, default = 0)
+	Effect2 = Column(Integer, default = 0)
+	Effect3 = Column(Integer, default = 0)
+	LifeSpan = Column(Integer, default = 0)
+	Attribute = Column(Integer, default = 0)
+	Char = relationship(Character, backref = backref("BankItems"))
+#	def __init__(self, Name, ID, Count, Type, ID1, ID2, ID3, Color, Effect1, Effect2,Effect3, LifeSpan
+	
+class Item(Base):
+	__tablename__ = "item"
+	ID = Column(Integer, primary_key = True)
+	CharID = Column(Integer, ForeignKey("character.CharacterID"))
+	Name = Column(String(20), nullable = False)
+	ItemID = Column(Integer, nullable = False)
+	Count = Column(Integer, default = 1)
+	Type = Column(Integer, default = 0)
+	ID1 = Column(Integer, default = 0)
+	ID2 = Column(Integer, default = 0)
+	ID3 = Column(Integer, default = 0)
+	Color = Column(Integer, default = 0)
+	Effect1 = Column(Integer, default = 0)
+	Effect2 = Column(Integer, default = 0)
+	Effect3 = Column(Integer, default = 0)
+	LifeSpan = Column(Integer, default = 0)
+	Attribute = Column(Integer, default = 0)
+	Equip = Column(Boolean, default = False)
+	X = Column(Integer, default = 0)
+	Y = Column(Integer, default = 0)
+	Char = relationship(Character, backref = backref("Items"))
+	
+class Skill(Base):
+	__tablename__ = "skill"
+	ID = Column(Integer, primary_key = True)
+	CharacterID = Column(Integer, ForeignKey("character.CharacterID"))
+	SkillID = Column(Integer, default = 0)
+	SkillMastery = Column(Integer, default = 0)
+	SkillSSN = Column(Integer, default = 0)
+	SkillChar = relationship(Character, backref = backref("Skills", order_by = ID))
+	
 class DatabaseDriver:
 	def Initialize(self, URL):
 		self.engine = None

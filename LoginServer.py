@@ -829,6 +829,7 @@ class CLoginServer(object):
 		SendData += self.GetCharList(account)
 		self.SendMsgToClient(sender, SendData)
 		PutLogList("(*) Create new character -> Create new character success on account %s [CharName: %s ]!" % (Packet.AccountName, Packet.PlayerName))
+		
 
 	def GetCharList(self, account_instance):
 		global fillzeros
@@ -836,7 +837,7 @@ class CLoginServer(object):
 		for Char in account_instance.CharList:
 			print Char.CharName, Char.MapLoc, type(Char.MapLoc), type(str(Char.MapLoc)), Char.Appr1, Char.Appr2
 			Tmp = struct.pack('<10sB6h2i6h12x10s',
-							*map(lambda fld: int(fld) if fld.isdigit() else str(fld),
+							*map(lambda fld: int(fld) if str(fld).isdigit() else str(fld),
 								[Char.CharName,
 								 1, #wtf?
 								 Char.Appr1,
@@ -944,19 +945,23 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			return
 			
-		OK = self.Database.CheckAccountLogin(Packet.AccountName, Packet.AccountPassword)
-		if OK[0] != Account.OK:
+		sess = self.Database.session()
+		
+		account = Account.Match(sess, Packet.AccountName, Packet.AccountPassword)
+		
+		if not account:
 			SendData = struct.pack('<LhB', Packets.MSGID_RESPONSE_ENTERGAME, Packets.DEF_ENTERGAMERESTYPE_REJECT, Packets.DEF_REJECTTYPE_DATADIFFERENCE)
 			self.SendMsgToClient(sender, SendData)
 			return
 		
-		Ch = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
-		Found = False
-		for C in Ch:
-			if C['char_name'] == Packet.PlayerName:
-				Found = True
 		
-		if Found:
+		#Ch = self.Database.GetAccountCharacterList(Packet.AccountName, Packet.AccountPassword)
+		#Found = False
+		#for C in Ch:
+		#	if C['char_name'] == Packet.PlayerName:
+		#		Found = True
+		
+		if account.Has(Packet.PlayerName):
 
 			GS = self.IsMapAvailable(Packet.MapName)
 			(InUse, ID) = self.IsAccountInUse(Packet.AccountName)
@@ -1090,132 +1095,128 @@ class CLoginServer(object):
 			self.SendMsgToGS(GS, SendData)
 
 	def GetCharacterInfo(self, AccountName, AccountPassword, CharName):
-		OK = self.Database.GetCharacter(AccountName, AccountPassword, CharName)
-		if OK == False:
-			"OK == False"
-			return
-		Ch = OK['Content']
-		
+		account = Account.Match(self.Database.session(), AccountName, AccountPassword)
+		if not account:
+			return False
+		Ch = (lambda x: x[0] if x else False)(account.Has(CharName))
+		if not Ch:
+			return False
 		Data = struct.pack('<10s2b10s2h5B20sbih7Bi100s',
-									CharName,
+									str(Ch.CharName),
 									0, #Account Status - outdated
-									Ch['GuildID'], #Guild Status - outdated
-									Ch['MapLoc'],
-									Ch['LocX'], Ch['LocY'],
-									Ch['Gender'],
-									Ch['Skin'],
-									Ch['HairStyle'],
-									Ch['HairColor'],
-									Ch['Underwear'],
-									Ch['GuildName'],
-									Ch['GuildRank'],
-									Ch['HP'],
-									Ch['Level'],
-									Ch['Strength'],
-									Ch['Vitality'],
-									Ch['Dexterity'],
-									Ch['Intelligence'],
-									Ch['Magic'],
-									Ch['Agility'],
-									Ch['Luck'],
-									Ch['Exp'],
-									Ch['MagicMastery'])
+									Ch.GuildID, #Guild Status - outdated
+									str(Ch.MapLoc),
+									Ch.LocX, Ch.LocY,
+									Ch.Gender,
+									Ch.Skin,
+									Ch.HairStyle,
+									Ch.HairColor,
+									Ch.Underwear,
+									str(Ch.GuildName),
+									Ch.GuildRank,
+									Ch.HP,
+									Ch.Level,
+									Ch.Strength,
+									Ch.Vitality,
+									Ch.Dexterity,
+									Ch.Intelligence,
+									Ch.Magic,
+									Ch.Charisma,
+									Ch.Luck,
+									Ch.Experience,
+									str(Ch.MagicMastery))
 		
-		for each in OK['Skill']:
-			for key, value in each.iteritems():
-				if key == "SkillMastery":
-					Data += struct.pack('B', value)
+		for each in map(lambda s: s.SkillMastery, Ch.Skills):
+			Data += struct.pack('<B', each)
 					
 		Data += struct.pack('<10s2iB3i', 
-									Ch['Nation'],
-									Ch['MP'],
-									Ch['SP'],
+									str(Ch.Nation),
+									Ch.MP,
+									Ch.SP,
 									0, # LU-pool - outdated
-									Ch['EK'],
-									Ch['PK'],
-									Ch['RewardGold'])
+									Ch.EK,
+									Ch.PK,
+									Ch.RewardGold)
 		
-		for each in OK['Skill']:
-			for key, value in each.iteritems():
-				if key == "SkillSSN":
-					Data += struct.pack('i', value)
+		for each in map(lambda s: s.SkillSSN, Ch.Skills):
+			Data += struct.pack('i', each)
 		
 		Data += struct.pack('<4x2B4iB4i20s3h3iB3ihBiB2i10siB4ihB', #4x = 4 byte padding
-									Ch['Hunger'],
-									Ch['AdminLevel'],
-									Ch['LeftShutupTime'],
-									Ch['LeftPopTime'],
-									Ch['Popularity'],
-									Ch['GuildID'], # changed to I (unsigned int) previously h (short)-
-									Ch['DownSkillID'] & 255,
-									Ch['CharID'],
-									Ch['ID1'],
-									Ch['ID2'],
-									Ch['ID3'],
-									str(Ch['BlockDate']) if Ch['BlockDate'] != None else "0000-00-00 00:00:00",
-									Ch['QuestNum'],
-									Ch['QuestCount'],
-									Ch['QuestRewType'],
-									Ch['QuestRewAmmount'],
-									Ch['Contribution'],
-									Ch['QuestID'],
-									Ch['QuestCompleted'],
-									Ch['LeftForceRecallTime'],
-									Ch['LeftFirmStaminarTime'],
-									Ch['EventID'],
-									Ch['LeftSAC'],
-									Ch['FightNum'],
-									Ch['FightDate'],
-									Ch['FightTicket'],
-									Ch['LeftSpecTime'],
-									Ch['WarCon'],
-									Ch['LockMapName'],
-									Ch['LockMapTime'],
-									Ch['CruJob'],
-									Ch['CruConstructPoint'],
-									Ch['CruID'],
-									Ch['LeftDeadPenaltyTime'],
-									Ch['PartyID'],
-									Ch['GizonItemUpgradeLeft'],
-									len(OK['Item']))
+									Ch.Hunger,
+									Ch.AdminLevel,
+									Ch.LeftShutupTime,
+									Ch.LeftPopTime,
+									Ch.Popularity,
+									Ch.GuildID, # changed to I (unsigned int) previously h (short)-
+									Ch.DownSkillID & 255,
+									Ch.CharacterID,
+									Ch.ID1,
+									Ch.ID2,
+									Ch.ID3,
+									str(Ch.BlockDate if Ch.BlockDate != None else "0000-00-00 00:00:00"),
+									Ch.QuestNum,
+									Ch.QuestCount,
+									Ch.QuestRewType,
+									Ch.QuestRewAmmount,
+									Ch.Contribution,
+									Ch.QuestID,
+									Ch.QuestCompleted,
+									Ch.LeftForceRecallTime,
+									Ch.LeftFirmStaminarTime,
+									Ch.EventID,
+									Ch.LeftSAC,
+									Ch.FightNum,
+									Ch.FightDate,
+									Ch.FightTicket,
+									Ch.LeftSpecialTime,
+									Ch.WarCon,
+									str(Ch.LockedMapName),
+									Ch.LockedMapTime,
+									Ch.CruJob,
+									Ch.CruConstructPoint,
+									Ch.CruID,
+									Ch.LeftDeadPenaltyTime,
+									Ch.PartyID,
+									Ch.GizonItemUpgradeLeft,
+									len(Ch.Items))
 		
-		for each in OK['Item']:
+		for each in Ch.Items:
 			Data += struct.pack('<20sih3iB4hiB2hi',
-									each['ItemName'],
-									each['Count'],
-									each['ItemType'],
-									each['ID1'],
-									each['ID2'],
-									each['ID3'],
-									each['Color'],
-									each['Effect1'],
-									each['Effect2'],
-									each['Effect3'],
-									each['LifeSpan'],
-									each['Attribute'],
-									each['ItemEquip'],
-									each['ItemPosX'],
-									each['ItemPosY'],
-									each['ItemID'])
-									
-		Data += struct.pack('<xB', len(OK['Bank'])) #Padding (1 byte), Bank items count
-		for each in OK['Bank']:
+									str(each.Name),
+									each.Count,
+									each.Type,
+									each.ID1,
+									each.ID2,
+									each.ID3,
+									each.Color,
+									each.Effect1,
+									each.Effect2,
+									each.Effect3,
+									each.LifeSpan,
+									each.Attribute,
+									each.Equip,
+									each.X,
+									each.Y,
+									each.ItemID)
+								
+		Data += struct.pack('<xB', len(Ch.BankItems)) #Padding (1 byte), Bank items count
+		for each in Ch.BankItems:
 			Data += struct.pack('<20sih3iB4h2i', 
-									each['ItemName'],
-									each['Count'],
-									each['ItemType'],
-									each['ID1'],
-									each['ID2'],
-									each['ID3'],
-									each['Color'],
-									each['Effect1'],
-									each['Effect2'],
-									each['Effect3'],
-									each['LifeSpan'],
-									each['Attribute'],
-									each['ItemID'])
+									str(each.Name),
+									each.Count,
+									each.Type,
+									each.ID1,
+									each.ID2,
+									each.ID3,
+									each.Color,
+									each.Effect1,
+									each.Effect2,
+									each.Effect3,
+									each.LifeSpan,
+									each.Attribute,
+									each.ItemID)
 
-		Data += struct.pack('<10s', Ch['Profile'])
+		Data += struct.pack('<10s', str(Ch.Profile))
 		return Data
 		
 	def ServerStockMsgHandler(self, GS, buffer):
