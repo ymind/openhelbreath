@@ -57,6 +57,8 @@ class Account(Base):
 		
 	def Has(self, player_name):
 		return filter(lambda ch: ch.CharName == player_name, self.CharList)
+	def Find(self, player_name):
+		return (lambda x: x[0] if x else False)(self.Has(player_name))
 	
 class Character(Base):
 	__tablename__ = "character"
@@ -96,6 +98,7 @@ class Character(Base):
 	LockedMapName = Column(String(10), default = "")
 	LockedMapTime = Column(Integer, default = 0)
 	CreateDate = Column(DateTime)
+	LogoutDate = Column(DateTime)
 	BlockDate = Column(DateTime)
 	GuildName = Column(String(20))
 	GuildID = Column(Integer, default = -1)
@@ -164,6 +167,7 @@ class Character(Base):
 		self.SP = (Str * 2) + 2
 		self.CreateDate = datetime.datetime.now()
 		self.AddItem(56, "Gold", 0, 0, 0, 0, 65, 30)
+		self.CreateDate = datetime.datetime.now()
 		for s in range(24):
 			if s in [4, 5, 7]:
 				SkillMastery = 20
@@ -173,20 +177,27 @@ class Character(Base):
 				SkillMastery = 0
 			self.Skills.append(Skill(SkillID = s,
 									 SkillMastery = SkillMastery))
+		
 	def __repr__(self):
 		return "<Character(CharName = '%s', Level = '%d')>" % (self.CharName, self.Level)
 	
 	def AddItem(self, _ID, _Name, _LifeSpan, _Color, _Attr, _Equip, _X, _Y):
-		self.Items.append(Item(
-							Name = _Name,
-							ItemID = _ID,
-							Color = _Color,
-							LifeSpan = _LifeSpan,
-							Attribute = _Attr,
-							Equip = _Equip,
-							X = _X,
-							Y = _Y
-							))
+		self.Items.append(Item(Name = _Name,
+								ItemID = _ID,
+								Color = _Color,
+								LifeSpan = _LifeSpan,
+								Attribute = _Attr,
+								Equip = _Equip,
+								X = _X,
+								Y = _Y))
+	def Erase(self, sess):
+		while len(self.Skills):
+			sess.delete(self.Skills.pop(0))
+		while len(self.Items):
+			sess.delete(self.Items.pop(0))
+		while len(self.BankItems):
+			sess.delete(self.BankItems.pop(0))
+		sess.delete(self)
 		
 class BankItem(Base):
 	__tablename__ = "bankitem"
@@ -253,46 +264,3 @@ class DatabaseDriver:
 	
 	def session(self):
 		return self.Session()
-	
-	def CreateNewCharacter(self, Packet):
-		"""
-			Create new character given Packet
-			Packet:
-				MsgType
-				PlayerName
-				AccountName
-				AccountPassword
-				WS
-				Gender
-				SkinCol
-				HairStyle
-				HairCol
-				UnderCol
-				Str
-				Vit
-				Dex
-				Int
-				Mag
-				Agi
-		"""
-		session = self.Session()
-		try:
-			acc = session.query(Account).\
-					filter(and_(Account.Name == Packet.AccountName, Account.Password == Packet.AccountPassword)).\
-					one()
-		except NoResultFound:
-			return False
-		
-		if len(acc.CharList) >= 4:
-			return False
-		
-		new_char = Character(Packet.PlayerName, Packet.Gender, Packet.SkinCol, Packet.HairStyle, Packet.HairCol, Packet.UnderCol,
-							 Packet.Str, Packet.Dex, Packet.Int, Packet.Mag, Packet.Vit, Packet.Chr)
-		
-		acc.CharList += [new_char]
-		try:
-			session.commit()
-			return True
-		except:
-			session.rollback()
-			return False

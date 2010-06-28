@@ -28,14 +28,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import socket, os, sys, select, struct, time, re, random, operator
+import socket, os, sys, select, struct, time, re, random, operator, datetime
 from Enum import Enum
 from threading import Thread, Semaphore, Event
 from NetMessages import Packets
 from GlobalDef import DEF, AccountInfo, Logfile, Version
 from Helpers import Callbacks, PutLogFileList, PutLogList
 from Sockets import ServerSocket
-from Database import Account, Character, DatabaseDriver
+from Database import Account, Character, BankItem, Item, Skill, DatabaseDriver
 from collections import namedtuple
 from Timer import TimerManager
 
@@ -867,13 +867,34 @@ class CLoginServer(object):
 			self.SendMsgToClient(sender, SendData)
 			return
 			
-		if Packet.WS != self.WorldServerName or not self.Database.DeleteCharacter(Packet.AccountName, Packet.AccountPassword, Packet.CharName):
+		sess = self.Database.session()
+		account = Account.Match(sess, Packet.AccountName, Packet.AccountPassword)
+		if Packet.WS != self.WorldServerName:
+			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGCHARACTER)
+			self.SendMsgToClient(sender, SendData)
+			return
+		if not account:
+			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGCHARACTER)
+			self.SendMsgToClient(sender, SendData)
+			return
+		Char = account.Has(Packet.CharName)
+		if not Char:
+			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGCHARACTER)
+			self.SendMsgToClient(sender, SendData)
+			return
+		
+		Char[0].Erase(sess)
+		
+		try:
+			sess.commit()
+		except:
+			sess.rollback()
 			SendData = struct.pack('<Lh', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_NOTEXISTINGCHARACTER)
 			self.SendMsgToClient(sender, SendData)
 			return
 		PutLogList("Character deleted success! [ %s ] Account[%s]" % (Packet.CharName, Packet.AccountName))
 		SendData = struct.pack('<LhB', Packets.MSGID_RESPONSE_LOG, Packets.DEF_LOGRESMSGTYPE_CHARACTERDELETED, 1)
-		SendData += self.GetCharList(Packet.AccountName, Packet.AccountPassword)
+		SendData += self.GetCharList(account)
 		self.SendMsgToClient(sender, SendData)
 		
 	def CreateNewAccount(self, sender, buffer):
@@ -1098,7 +1119,7 @@ class CLoginServer(object):
 		account = Account.Match(self.Database.session(), AccountName, AccountPassword)
 		if not account:
 			return False
-		Ch = (lambda x: x[0] if x else False)(account.Has(CharName))
+		Ch = account.Find(CharName)
 		if not Ch:
 			return False
 		Data = struct.pack('<10s2b10s2h5B20sbih7Bi100s',
@@ -1248,18 +1269,7 @@ class CLoginServer(object):
 				if self.GameServer[i].IsRegistered and self.GameServer[i] != GS:
 					self.SendMsgToGS(self.GameServer[i], SendBuffer)
 
-	def SavePlayerData(self, buffer, GS):
-		global packet_format
-		fmt = "<h10s10s10s"
-		s=map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
-		Header = namedtuple("Header", "MsgType CharName AccountName AccountPassword")._make(s)
-		buffer = buffer[struct.calcsize(fmt)+1:]
-		Data = self.DecodeSavePlayerDataContents(buffer)
-		if self.Database.SavePlayerContents(Header.CharName, Header.AccountName, Header.AccountPassword, Data):
-			PutLogList("(!) Player [ %s ] data contents saved !" % Header.CharName)
-		else:
-			PutLogList("(!!!) Player [ %s ] data contents not saved !" % Header.CharName)
-
+		
 	def DecodeSavePlayerDataContents(self, buffer):
 		global packet_format
 		Values = "wYear wMonth wDay wHour wMinute wSecond m_cLocation m_cMapName " + \
@@ -1277,7 +1287,7 @@ class CLoginServer(object):
 								"m_iCrusadeDuty m_dwCrusadeGUID m_iConstructionPoint m_iDeadPenaltyTime " + \
 								"m_iPartyID m_iGizonItemUpgradeLeft m_iSpecialAbilityTime2 " + \
 								"m_sAppr1 m_sAppr2 m_sAppr3 m_sAppr4 m_iApprColor MagicMastery"
-								
+		
 		format = "<h5B10s10s2h20s2h3ihi7B4ib3i6B4iB20s4h3iBihBiBi10siB4ih6i100s"
 		SkillsFormat = "<24B24I"
 		ContentSize = struct.calcsize(format)
@@ -1384,7 +1394,158 @@ class CLoginServer(object):
 		else:
 			PutLogList("Unknown data 2", Logfile.HACK)
 			print Packet
+	def SavePlayerData(self, Header, Data):
+		"""global packet_format
+		fmt = "<h10s10s10s"
+		s=map(packet_format, struct.unpack(fmt, buffer[:struct.calcsize(fmt)]))
+		Header = namedtuple("Header", "MsgType CharName AccountName AccountPassword")._make(s)
+		buffer = buffer[struct.calcsize(fmt)+1:]
+		"""
+		
+		sess = self.Database.session()
+		
+		account = Account.Match(sess, Header.AccountName, Header.AccountPassword)
+		if not account:
+			return False
+		
+		Ch = account.Find(Header.PlayerName)
+		
+		if not Ch:
+			return False
+		
+		Player = Data['Player']
+		Ch.LocX = Player.m_sX
+		Ch.LocY = Player.m_sY
+		Ch.GuildName = Player.m_cGuildName
+		Ch.Nation = Player.m_cLocation
+		Ch.MapLoc = Player.m_cMapName
+		Ch.GuildID = Player.m_iGuildGuid
+		Ch.GuildRank = Player.m_cGuildRank
+		Ch.HP = Player.m_iHP
+		Ch.MP = Player.m_iMP
+		Ch.SP = Player.m_iSP
+		Ch.Level = Player.m_iLevel
+		Ch.Rating = Player.m_iRating
+		Ch.Strength = Player.m_iStr
+		Ch.Vitality = Player.m_iVit
+		Ch.Dexterity = Player.m_iDex
+		Ch.Intelligence = Player.m_iInt
+		Ch.Magic = Player.m_iMag
+		Ch.Charisma = Player.m_iAgi
+		Ch.Luck = Player.m_iLuck
+		Ch.Experience = Player.m_iExp
+		Ch.EK = Player.m_iEnemyKillCount
+		Ch.PK = Player.m_iPKCount
+		Ch.RewardGold = Player.m_iRewardGold
+		Ch.DownSkillIndex = Player.m_iDownSkillIndex
+		Ch.ID1 = Player.m_sCharIDnum1
+		Ch.ID2 = Player.m_sCharIDnum2
+		Ch.ID3 = Player.m_sCharIDnum3
+		Ch.Gender = Player.m_cSex
+		Ch.Skin = Player.m_cSkin
+		Ch.HairStyle = Player.m_cHairStyle
+		Ch.HairColor = Player.m_cHairColor
+		Ch.Underwear = Player.m_cUnderwear
+		Ch.Hunger = Player.m_iHungerStatus
+		Ch.LeftShutupTime = Player.m_iTimeLeft_ShutUp
+		Ch.LeftPopTime = Player.m_iTimeLeft_Rating
+		Ch.LeftForceRecallTime = Player.m_iTimeLeft_ForceRecall
+		Ch.LeftFirmStaminarTime = Player.m_iTimeLeft_FirmStaminar
+		Ch.iAdminUserLevel = Player.m_iAdminUserLevel
+		try:
+			raw_date = map(int, re.compile('(\d+)(?:[\-\: ]+)?').findall(Player.m_iBlockDate))
+			
+			Ch.BlockDate = datetime.datetime(*raw_date)
+		except:
+			Ch.BlockDate = None
+			
+		#Ch.BlockDate = Player.m_iBlockDate
+		Ch.QuestNum = Player.m_iQuest
+		Ch.QuestID = Player.m_iQuestID
+		Ch.QuestCount = Player.m_iCurQuestCount
+		Ch.QuestRewType = Player.m_iQuestRewardType
+		Ch.QuestRewAmmount = Player.m_iQuestRewardAmount
+		Ch.Contribution = Player.m_iContribution
+		Ch.WarCon = Player.m_iWarContribution
+		Ch.QuestCompleted = Player.m_bIsQuestCompleted
+		Ch.EventID = Player.m_iSpecialEventID
+		Ch.LeftSAC = Player.m_iSuperAttackLeft
+		Ch.FightNum = Player.m_iFightzoneNumber
+		Ch.FightDate = Player.m_iReserveTime
+		Ch.FightTicket = Player.m_iFightZoneTicketNumber
+		Ch.LeftSpecialTime = Player.m_iSpecialAbilityTime
+		Ch.LockedMapName = Player.m_cLockedMapName
+		Ch.LockedMapTime = Player.m_iLockedMapTime
+		Ch.CruJob = Player.m_iCrusadeDuty
+		Ch.CruID = Player.m_dwCrusadeGUID
+		Ch.CruConstructPoint = Player.m_iConstructionPoint
+		Ch.LeftDeadPenaltyTime = Player.m_iDeadPenaltyTime
+		Ch.PartyID = Player.m_iPartyID
+		Ch.GizonItemUpgradeLeft = Player.m_iGizonItemUpgradeLeft
+		Ch.Appr1 = Player.m_sAppr1
+		Ch.Appr2 = Player.m_sAppr2
+		Ch.Appr3 = Player.m_sAppr3
+		Ch.Appr4 = Player.m_sAppr4
+		Ch.ApprColor = Player.m_iApprColor
+		Ch.MagicMastery = Player.MagicMastery
+		Ch.LogoutDate = datetime.datetime.now()
+		Ch.Profile = Data['Profile']
 
+		""" Update skills """
+		for i in range(24):
+			Ch.Skills[i].SkillMastery = Data['Skills'][i]
+			Ch.Skills[i].SkillSSN = Data['Skills'][24 + i]
+		
+		""" Update items - TODO : update, not rewrite """
+		
+		while len(Ch.Items):
+			sess.delete(Ch.Items.pop(0))
+		
+		for item in Data['Items']:
+			Ch.Items.append(Item(
+								Name = item.m_cName,
+								ItemID = item.ItemUniqueID,
+								Count = item.m_dwCount,
+								Type = item.m_sTouchEffectType,
+								ID1 = item.m_sTouchEffectValue1,
+								ID2 = item.m_sTouchEffectValue2,
+								ID3 = item.m_sTouchEffectValue3,
+								Color = item.m_cItemColor,
+								Effect1 = item.m_sItemSpecEffectValue1,
+								Effect2 = item.m_sItemSpecEffectValue2,
+								Effect3 = item.m_sItemSpecEffectValue3,
+								LifeSpan = item.m_wCurLifeSpan,
+								Attribute = item.m_dwAttribute,
+								Equip = item.m_bIsItemEquipped,
+								X = item.X,
+								Y = item.Y))
+			
+		while len(Ch.BankItems):
+			sess.delete(Ch.BankItems.pop(0))
+			
+		for item in Data['BankItems']:
+			Ch.BankItems.append(BankItem(
+								Name = item.m_cName,
+								ItemID = item.ItemUniqueID,
+								Count = item.m_dwCount,
+								Type = item.m_sTouchEffectType,
+								ID1 = item.m_sTouchEffectValue1,
+								ID2 = item.m_sTouchEffectValue2,
+								ID3 = item.m_sTouchEffectValue3,
+								Color = item.m_cItemColor,
+								Effect1 = item.m_sItemSpecEffectValue1,
+								Effect2 = item.m_sItemSpecEffectValue2,
+								Effect3 = item.m_sItemSpecEffectValue3,
+								LifeSpan = item.m_wCurLifeSpan,
+								Attribute = item.m_dwAttribute))		
+						
+		try:
+			sess.commit()
+			return True
+		except:
+			sess.rollback()
+			return False
+		
 	def ProcessClientLogout(self, buffer, GS, bSave):
 		global packet_format
 		try:
@@ -1401,7 +1562,7 @@ class CLoginServer(object):
 			if Client['AccountPassword'] == Packet.AccountPassword and Client['AccountName'] == Packet.AccountName and Client['CharName'] == Packet.PlayerName:
 				if bSave:
 					Data = self.DecodeSavePlayerDataContents(buffer)
-					if self.Database.SavePlayerContents(Packet.PlayerName, Packet.AccountName, Packet.AccountPassword, Data):
+					if self.SavePlayerData(Packet, Data):
 						PutLogList("(*) Player [ %s ] Account [ %s ] data saved properly." % (Packet.PlayerName, Packet.AccountName))
 					else:
 						PutLogList("(!) Player [ %s ] data contents not saved !" % Packet.PlayerName)
