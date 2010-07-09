@@ -201,107 +201,102 @@ class CLoginServer(object):
 			for j in i.GameServerSocket:
 				if j == sender:
 					return i
-		
 				
 	def GateServer_OnReceive(self, sender, buffer):
 		"""
 			Triggered when any data is available on Sock's buffer
 		"""
-		size = len(buffer)
-		try:
-			format = '<Bh'
-			header_size = struct.calcsize(format)
-			if len(buffer) < header_size:
-				raise Exception
-			s = struct.unpack(format, buffer[:header_size])
-			Header = namedtuple('Header', 'cKey dwSize')._make(s)
-			buffer = buffer[header_size:]
-		except:
-			sender.disconnect()
-			return
+		sender.buffer += buffer
+		while len(sender.buffer):
+			buffer = "" #
+			if len(sender.buffer) >= 3:
+				s = struct.unpack('<Bh', sender.buffer[:3])
+				Header = namedtuple('Header', 'cKey dwSize')._make(s)
+				if Header.dwSize >= len(sender.buffer) - 3:
+					buffer = sender.buffer[:Header.dwSize]
+					sender.buffer = sender.buffer[Header.dwSize:]
+					buffer = buffer[3:]
+					
+			if not buffer:
+				return
+				
+			if Header.cKey > 0:
+				Decode = lambda buffer, dwSize, cKey: "".join(map(lambda n: (lambda asdf: chr(asdf & 255))((ord(buffer[n]) ^ (cKey ^ (dwSize - n))) - (n ^ cKey)), range(len(buffer))))
+				buffer = Decode(buffer, Header.dwSize-3, Header.cKey)
+					
+			MsgID = struct.unpack('<L', buffer[:4])[0]
+			RawBuffer = buffer
+			buffer = buffer[4:]
 			
-		if Header.dwSize != size or size < 4 or Header.dwSize < 4:
-			PutLogList("(!) %s Header.dwSize does not match buffer size. Hack!" % sender.address, Logfile.HACK)
-			sender.disconnect()
-			return
-
-		if Header.cKey > 0:
-			Decode = lambda buffer, dwSize, cKey: "".join(map(lambda n: (lambda asdf: chr(asdf & 255))((ord(buffer[n]) ^ (cKey ^ (dwSize - n))) - (n ^ cKey)), range(len(buffer))))
-			buffer = Decode(buffer, Header.dwSize-3, Header.cKey)
+			if MsgID == Packets.MSGID_REQUEST_REGISTERGAMESERVER:
+				self.RegisterGameServer(sender, buffer)
 				
-		MsgID = struct.unpack('<L', buffer[:4])[0]
-		RawBuffer = buffer
-		buffer = buffer[4:]
-		
-		if MsgID == Packets.MSGID_REQUEST_REGISTERGAMESERVER:
-			self.RegisterGameServer(sender, buffer)
-			
-		elif MsgID == Packets.MSGID_REQUEST_REGISTERGAMESERVERSOCKET:
-			self.RegisterGameServerSocket(sender, buffer)
-			
-		elif MsgID == Packets.MSGID_GAMESERVERALIVE:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.GameServerAliveHandler(GS, buffer)
+			elif MsgID == Packets.MSGID_REQUEST_REGISTERGAMESERVERSOCKET:
+				self.RegisterGameServerSocket(sender, buffer)
 				
-		elif MsgID == Packets.MSGID_REQUEST_PLAYERDATA:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.ProcessRequestPlayerData(sender, buffer, GS)
+			elif MsgID == Packets.MSGID_GAMESERVERALIVE:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.GameServerAliveHandler(GS, buffer)
+					
+			elif MsgID == Packets.MSGID_REQUEST_PLAYERDATA:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.ProcessRequestPlayerData(sender, buffer, GS)
 
-		elif MsgID == Packets.MSGID_SERVERSTOCKMSG:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.ServerStockMsgHandler(GS, RawBuffer);
+			elif MsgID == Packets.MSGID_SERVERSTOCKMSG:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.ServerStockMsgHandler(GS, RawBuffer);
 
-		elif MsgID in [Packets.MSGID_REQUEST_SAVEPLAYERDATALOGOUT, Packets.MSGID_REQUEST_SAVEPLAYERDATA_REPLY]:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.ProcessClientLogout(buffer, GS, True)
-				
-		elif MsgID == Packets.MSGID_REQUEST_NOSAVELOGOUT:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.ProcessClientLogout(buffer, GS, False)
+			elif MsgID in [Packets.MSGID_REQUEST_SAVEPLAYERDATALOGOUT, Packets.MSGID_REQUEST_SAVEPLAYERDATA_REPLY]:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.ProcessClientLogout(buffer, GS, True)
+					
+			elif MsgID == Packets.MSGID_REQUEST_NOSAVELOGOUT:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.ProcessClientLogout(buffer, GS, False)
 
-		elif MsgID == Packets.MSGID_ENTERGAMECONFIRM:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.EnterGameConfirm(buffer, GS)
+			elif MsgID == Packets.MSGID_ENTERGAMECONFIRM:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.EnterGameConfirm(buffer, GS)
 
-		elif MsgID == Packets.MSGID_GAMEMASTERLOG:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				PutLogFileList(buffer, Logfile.GM, True)
+			elif MsgID == Packets.MSGID_GAMEMASTERLOG:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					PutLogFileList(buffer, Logfile.GM, True)
 
-		elif MsgID in [Packets.MSGID_GAMEITEMLOG, Packets.MSGID_ITEMLOG]:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				PutLogFileList(buffer, Logfile.ITEM, True)
+			elif MsgID in [Packets.MSGID_GAMEITEMLOG, Packets.MSGID_ITEMLOG]:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					PutLogFileList(buffer, Logfile.ITEM, True)
 
-		elif MsgID == Packets.MSGID_GAMECRUSADELOG:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				PutLogFileList(buffer, Logfile.CRUSADE, True)
+			elif MsgID == Packets.MSGID_GAMECRUSADELOG:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					PutLogFileList(buffer, Logfile.CRUSADE, True)
 
-		elif MsgID == Packets.MSGID_REQUEST_SETACCOUNTWAITSTATUS:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.SetAccountServerChangeStatus(buffer, True)
-				
-		elif MsgID in [Packets.MSGID_REQUEST_CREATENEWGUILD, 
-						Packets.MSGID_REQUEST_DISBANDGUILD,
-						Packets.MSGID_REQUEST_UPDATEGUILDINFO_NEWGUILDSMAN,
-						Packets.MSGID_REQUEST_UPDATEGUILDINFO_DELGUILDSMAN]:
-			GS = self.SockToGS(sender)
-			if GS != None and GS.IsRegistered:
-				self.GuildHandler(MsgID, buffer, GS)
-				
-		else:
-			if MsgID in Packets:
-				PutLogFileList("MsgID: %s (0x%08X) %db * %s" % (Packets.reverse_lookup_without_mask(MsgID), MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
+			elif MsgID == Packets.MSGID_REQUEST_SETACCOUNTWAITSTATUS:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.SetAccountServerChangeStatus(buffer, True)
+					
+			elif MsgID in [Packets.MSGID_REQUEST_CREATENEWGUILD, 
+							Packets.MSGID_REQUEST_DISBANDGUILD,
+							Packets.MSGID_REQUEST_UPDATEGUILDINFO_NEWGUILDSMAN,
+							Packets.MSGID_REQUEST_UPDATEGUILDINFO_DELGUILDSMAN]:
+				GS = self.SockToGS(sender)
+				if GS != None and GS.IsRegistered:
+					self.GuildHandler(MsgID, buffer, GS)
+					
 			else:
-				PutLogFileList("MsgID: 0x%08X %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
+				if MsgID in Packets:
+					PutLogFileList("MsgID: %s (0x%08X) %db * %s" % (Packets.reverse_lookup_without_mask(MsgID), MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
+				else:
+					PutLogFileList("MsgID: 0x%08X %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
 				
 	def GateServer_OnClose(self, sender, size):
 		"""
@@ -569,7 +564,9 @@ class CLoginServer(object):
 			PutLogList("GameServerAliveHandler: Size mismatch!")
 			return	
 		(MsgType, TotalPlayers) = struct.unpack('<hh', data[:4])
+		print "PING"
 		if MsgType == Packets.DEF_MSGTYPE_CONFIRM:
+			
 			GS.AliveResponseTime = time.time()
 			GS.TotalPlayers = TotalPlayers
 			
@@ -583,24 +580,18 @@ class CLoginServer(object):
 		PutLogList("(*) MainSocket -> Server open")
 		
 	def MainSocket_OnReceive(self, sender, buffer):
-		size = len(buffer)
-		PutLogList("(*) MainSocket -> Received %d bytes" % size)
-		try:
-			format = '<Bh'
-			header_size = struct.calcsize(format)
-			if len(buffer) < header_size:
-				raise Exception
-			s = struct.unpack(format, buffer[:header_size])
+		sender.buffer += buffer
+		buffer = "" #
+		if len(sender.buffer) >= 3:
+			s = struct.unpack('<Bh', sender.buffer[:3])
 			Header = namedtuple('Header', 'cKey dwSize')._make(s)
-			buffer = buffer[header_size:]
-		except:
-			PutLogList("[%s] Except in MainSocket_OnReceive" % sender.address, Logfile.HACK)
-			sender.disconnect()
-			return
-			
-		if Header.dwSize != size or size < 4 or Header.dwSize < 4:
-			PutLogList("(!) %s Header.dwSize does not match buffer size. Hack!" % sender.address, Logfile.HACK)
-			sender.disconnect()
+			if Header.dwSize >= len(sender.buffer) - 3:
+				buffer = sender.buffer[:Header.dwSize]
+				sender.buffer = sender.buffer[Header.dwSize:]
+				buffer = buffer[3:]
+				size = len(buffer)
+				
+		if not buffer:
 			return
 
 		if Header.cKey > 0:
@@ -1649,7 +1640,7 @@ class CLoginServer(object):
 		return True
 		
 	def __gameserver_alive(self):
-		CGameServer.GS_Lock.acquire()
+		"""CGameServer.GS_Lock.acquire()
 		for (k, v) in self.GameServer.items():
 			if abs(v.AliveResponseTime - time.time()) >= 10:
 				PutLogList("(*) Game Server : %s@%s:%d (%d maps) is not responding!" % (v.Data['ServerName'], v.Data['ServerIP'], v.Data['ServerPort'], len(v.MapName)))
@@ -1657,7 +1648,7 @@ class CLoginServer(object):
 					s = v.GameServerSocket.pop(0)
 					s.disconnect()
 				v.socket.disconnect()
-		CGameServer.GS_Lock.release()
+		CGameServer.GS_Lock.release()"""
 		return True
 		
 	def __sendtotalplayers(self):

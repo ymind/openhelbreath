@@ -249,7 +249,12 @@ class Skill(Base):
 	SkillMastery = Column(Integer, default = 0)
 	SkillSSN = Column(Integer, default = 0)
 	SkillChar = relationship(Character, backref = backref("Skills", order_by = ID))
-	
+
+"""class Guild(Base):
+	ID = Column(Integer, primary_key = True)
+	Name = Column(String(20))
+	Char = 	"""
+
 class DatabaseDriver:
 	def Initialize(self, URL):
 		self.engine = None
