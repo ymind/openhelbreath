@@ -293,10 +293,7 @@ class CLoginServer(object):
 					self.GuildHandler(MsgID, buffer, GS)
 					
 			else:
-				if MsgID in Packets:
-					PutLogFileList("MsgID: %s (0x%08X) %db * %s" % (Packets.reverse_lookup_without_mask(MsgID), MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
-				else:
-					PutLogFileList("MsgID: 0x%08X %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
+				PutLogFileList("MsgID: 0x%08X %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETGS)
 				
 	def GateServer_OnClose(self, sender, size):
 		"""
@@ -614,10 +611,7 @@ class CLoginServer(object):
 		elif MsgID == Packets.MSGID_REQUEST_ENTERGAME:
 			self.ProcessClientRequestEnterGame(sender, buffer)
 		else:
-			if MsgID in Packets:
-				PutLogFileList("MsgID: %s (0x%08X) %db * %s" % (Packets.reverse_lookup_without_mask(MsgID), MsgID, len(buffer), repr(buffer)), Logfile.PACKETMS)
-			else:
-				PutLogFileList("MsgID: (0x%08X) %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETMS)
+			PutLogFileList("MsgID: (0x%08X) %db * %s" % (MsgID, len(buffer), repr(buffer)), Logfile.PACKETMS)
 			
 	def MainSocket_OnClose(self, sender):
 		pass
@@ -827,9 +821,7 @@ class CLoginServer(object):
 		Buffer = chr(len(account_instance.CharList))
 		for Char in account_instance.CharList:
 			print Char.CharName, Char.MapLoc, type(Char.MapLoc), type(str(Char.MapLoc)), Char.Appr1, Char.Appr2
-			Tmp = struct.pack('<10sB6h2i6h12x10s',
-							*map(lambda fld: int(fld) if str(fld).isdigit() else str(fld),
-								[Char.CharName,
+			print [Char.CharName,
 								 1, #wtf?
 								 Char.Appr1,
 								 Char.Appr2,
@@ -841,7 +833,25 @@ class CLoginServer(object):
 								 Char.Experience,
 								 Char.Strength, Char.Vitality, Char.Dexterity, Char.Intelligence,
 								 Char.Magic, Char.Charisma, #"", #will be converted to 12 * \0x00 -> Logout date
-								 Char.MapLoc]))
+								 Char.MapLoc]
+			Tmp = struct.pack('<10sB6h2i6h12x10s',
+								str(Char.CharName),
+								 1, #wtf?
+								 Char.Appr1,
+								 Char.Appr2,
+								 Char.Appr3,
+								 Char.Appr4,
+								 Char.Gender,
+								 Char.Skin,
+								 Char.Level,
+								 Char.Experience,
+								 Char.Strength,
+								 Char.Vitality,
+								 Char.Dexterity,
+								 Char.Intelligence,
+								 Char.Magic,
+								 Char.Charisma, #"", #will be converted to 12 * \0x00 -> Logout date
+								 str(Char.MapLoc))
 			Buffer += Tmp		
 		return Buffer
 		
@@ -1063,7 +1073,7 @@ class CLoginServer(object):
 			global packet_format
 			format = '<h10s10s10s15sB'
 			if len(buffer) != struct.calcsize(format):
-				print "(!) RequestPlayerData size mismatch!"
+				print "(!) RequestPlayerData size mismatch!", len(buffer), struct.calcsize(format)
 				raise Exception				
 			s = map(packet_format, struct.unpack(format, buffer))
 			Packet = namedtuple('Packet', 'MsgType CharName AccountName AccountPassword Address AccountStatus')._make(s)
