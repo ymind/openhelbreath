@@ -342,7 +342,7 @@ class CLoginServer(object):
 			Reading HG cfgs in order
 		"""
 		Files = ["Item.cfg", "Item2.cfg", "Item3.cfg", "Item4.cfg", "BuildItem.cfg",
-				"DupItemID.cfg", "Magic.cfg", "noticement.txt", 
+				"DupItemID.cfg", "Magic.cfg", "NPCItem.cfg", "noticement.txt", 
 				"NPC.cfg", "Potion.cfg", "Quest.cfg", "Skill.cfg",
 				"AdminSettings.cfg", "Settings.cfg"]
 		self.Config = {}
@@ -522,7 +522,8 @@ class CLoginServer(object):
 					(Packets.MSGID_QUESTCONFIGURATIONCONTENTS, 'Quest'),
 					(Packets.MSGID_SKILLCONFIGURATIONCONTENTS, 'Skill'), 
 					(Packets.MSGID_ADMINSETTINGSCONFIGURATIONCONTENTS, 'AdminSettings'),
-					(Packets.MSGID_SETTINGSCONFIGURATIONCONTENTS, 'Settings')
+					(Packets.MSGID_SETTINGSCONFIGURATIONCONTENTS, 'Settings'),
+					(Packets.MSGID_NPCITEMCONFIGCONTENTS, 'NPCItem')
 				)
 				
 		for packet_id, key in Order:
