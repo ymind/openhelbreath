@@ -1,5 +1,5 @@
 #summary openhelbreath Client TODO list - Milestone 1
-#labels Featured,TODO
+#labels TODO,Deprecated
 
 = Introduction =
 
